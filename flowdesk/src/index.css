@@ -1,0 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+}
+
+/* ---- Tiptap / ProseMirror note editor content styles ---- */
+@layer components {
+  .note-prose {
+    @apply text-[15px] leading-relaxed text-ink;
+  }
+  .note-prose:focus {
+    outline: none;
+  }
+  .note-prose > * + * {
+    margin-top: 0.6em;
+  }
+  .note-prose h1 {
+    @apply mt-5 text-2xl font-bold text-ink;
+  }
+  .note-prose h2 {
+    @apply mt-5 text-xl font-bold text-ink;
+  }
+  .note-prose h3 {
+    @apply mt-4 text-lg font-bold text-ink;
+  }
+  .note-prose p {
+    @apply text-ink;
+  }
+  .note-prose ul {
+    @apply list-disc pl-6;
+  }
+  .note-prose ol {
+    @apply list-decimal pl-6;
+  }
+  .note-prose li > p {
+    margin: 0;
+  }
+  .note-prose blockquote {
+    @apply border-l-2 border-brand-300 pl-3 italic text-ink-muted;
+  }
+  .note-prose code {
+    @apply rounded bg-canvas px-1 py-0.5 text-[0.85em];
+  }
+  .note-prose pre {
+    @apply overflow-x-auto rounded-btn bg-canvas p-3 text-sm;
+  }
+  .note-prose pre code {
+    @apply bg-transparent p-0;
+  }
+  .note-prose a {
+    @apply text-brand-600 underline;
+  }
+  .note-prose hr {
+    @apply my-4 border-line;
+  }
+  /* Checklists (task list) */
+  .note-prose ul[data-type='taskList'] {
+    @apply list-none pl-0;
+  }
+  .note-prose ul[data-type='taskList'] li {
+    @apply flex items-start gap-2;
+  }
+  .note-prose ul[data-type='taskList'] li > label {
+    @apply mt-1 shrink-0;
+  }
+  .note-prose ul[data-type='taskList'] input[type='checkbox'] {
+    @apply h-4 w-4 rounded border-line text-brand-500;
+  }
+  /* Placeholder for the empty document */
+  .note-prose p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    @apply pointer-events-none float-left h-0 text-ink-subtle;
+  }
+
+  /* Tables */
+  .note-prose table {
+    @apply my-3 w-full table-fixed border-collapse text-sm;
+  }
+  .note-prose th,
+  .note-prose td {
+    @apply border border-line px-3 py-1.5 text-left align-top;
+  }
+  .note-prose th {
+    @apply bg-canvas font-semibold text-ink;
+  }
+  .note-prose .tableWrapper {
+    @apply overflow-x-auto;
+  }
+  /* Column-resize handle */
+  .note-prose .column-resize-handle {
+    @apply pointer-events-none absolute bottom-0 top-0 w-0.5 bg-brand-300;
+    right: -1px;
+  }
+  .note-prose .selectedCell {
+    @apply bg-brand-50;
+  }
+}

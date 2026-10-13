@@ -1,0 +1,29 @@
+# ---- Node / frontend (flowdesk) ----
+flowdesk/node_modules/
+flowdesk/dist/
+flowdesk/.vite/
+flowdesk/*.local
+
+# ---- Java / backend (flowdesk-api) ----
+flowdesk-api/target/
+flowdesk-api/*.db
+flowdesk-api/.mvn/wrapper/maven-wrapper.jar
+
+# ---- Bundled tooling (not source; large) ----
+tools/
+
+# ---- Local database & logs ----
+*.db
+*.log
+
+# ---- OS / editor noise ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# ---- Keep the launcher scripts (do NOT ignore them) ----
+!start-flowdesk.cmd
+!run-api.cmd
+!run-web.cmd
