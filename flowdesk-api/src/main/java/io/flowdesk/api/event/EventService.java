@@ -17,6 +17,8 @@ import java.util.Set;
 public class EventService {
 
     private static final Set<String> TONES = Set.of("purple", "amber", "green", "red");
+    private static final Set<String> RECURRENCES =
+            Set.of("NONE", "DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY", "YEARLY", "EVERY_N_DAYS");
 
     private final EventRepository events;
     private final NotebookRepository notebooks;
@@ -54,6 +56,8 @@ public class EventService {
                 normalizeTone(req.tone()),
                 resolveNotebook(req.notebookId())
         );
+        event.setRecurrence(normalizeRecurrence(req.recurrence()));
+        event.setRecurrenceInterval(normalizeInterval(req.recurrenceInterval()));
         return EventResponse.from(events.save(event));
     }
 
@@ -66,6 +70,8 @@ public class EventService {
         event.setStartTime(req.startTime());
         event.setEndTime(req.endTime());
         event.setTone(normalizeTone(req.tone()));
+        event.setRecurrence(normalizeRecurrence(req.recurrence()));
+        event.setRecurrenceInterval(normalizeInterval(req.recurrenceInterval()));
         event.setNotebook(resolveNotebook(req.notebookId()));
         event.touch();
         return EventResponse.from(events.save(event));
@@ -94,5 +100,16 @@ public class EventService {
         if (tone == null || tone.isBlank()) return "purple";
         String t = tone.trim().toLowerCase();
         return TONES.contains(t) ? t : "purple";
+    }
+
+    private String normalizeRecurrence(String recurrence) {
+        if (recurrence == null || recurrence.isBlank()) return "NONE";
+        String r = recurrence.trim().toUpperCase();
+        return RECURRENCES.contains(r) ? r : "NONE";
+    }
+
+    private int normalizeInterval(Integer interval) {
+        if (interval == null || interval < 1) return 1;
+        return interval;
     }
 }

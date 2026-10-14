@@ -14,6 +14,8 @@ public record EventResponse(
         LocalTime startTime,
         LocalTime endTime,
         String tone,
+        String recurrence,
+        int recurrenceInterval,
         Long notebookId,
         String notebookName
 ) {
@@ -26,6 +28,8 @@ public record EventResponse(
                 e.getStartTime(),
                 e.getEndTime(),
                 e.getTone(),
+                e.getRecurrence(),
+                e.getRecurrenceInterval(),
                 e.getNotebook() != null ? e.getNotebook().getId() : null,
                 e.getNotebook() != null ? e.getNotebook().getName() : null
         );

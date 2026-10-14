@@ -161,8 +161,11 @@ public class DataSeeder {
             tasks.save(review);
 
             // --- Calendar events (anchored to today) ---
-            events.save(new Event("Biology 101 Lecture", "Science Hall 204", today,
-                    LocalTime.of(9, 30), LocalTime.of(10, 30), "purple", nb.get("Biology 101")));
+            Event biologyLecture = new Event("Biology 101 Lecture", "Science Hall 204", today,
+                    LocalTime.of(9, 30), LocalTime.of(10, 30), "purple", nb.get("Biology 101"));
+            biologyLecture.setRecurrence("WEEKLY");
+            biologyLecture.setRecurrenceInterval(1);
+            events.save(biologyLecture);
             events.save(new Event("Study Group - Math", "Library Study Room B", today,
                     LocalTime.of(12, 0), LocalTime.of(13, 0), "amber", nb.get("Math 301")));
             events.save(new Event("History 201 Seminar", "Humanities Building 112", today,

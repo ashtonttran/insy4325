@@ -101,16 +101,6 @@ export function Calendar() {
 
   const focus = parseISO(focusDate)
 
-  const eventsByDate = useMemo(() => {
-    const map = new Map<string, CalendarEvent[]>()
-    for (const e of events) {
-      const list = map.get(e.date) ?? []
-      list.push(e)
-      map.set(e.date, list)
-    }
-    return map
-  }, [events])
-
   // The visible date range for the current view, used to project recurrences.
   const visibleRange = useMemo(() => {
     if (view === 'month') {
@@ -124,6 +114,27 @@ export function Calendar() {
     const iso = toISO(focus)
     return { start: iso, end: iso }
   }, [view, focus])
+
+  // Events keyed by date, expanding recurring events across every occurrence
+  // within the visible range (projected at display time; one stored event).
+  const eventsByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>()
+    for (const e of events) {
+      const dates = expandRecurrence(
+        e.date,
+        (e.recurrence ?? 'NONE') as Recurrence,
+        e.recurrenceInterval ?? 1,
+        visibleRange.start,
+        visibleRange.end,
+      )
+      for (const iso of dates) {
+        const list = map.get(iso) ?? []
+        list.push(e)
+        map.set(iso, list)
+      }
+    }
+    return map
+  }, [events, visibleRange])
 
   // Tasks keyed by date, expanding recurring tasks across every occurrence
   // that falls within the visible range (projected at display time; no extra
@@ -290,7 +301,7 @@ export function Calendar() {
           {view === 'week' && (
             <WeekView
               focus={focus}
-              events={events}
+              eventsByDate={eventsByDate}
               tasksByDate={tasksByDate}
               onEventClick={openEdit}
               onSlotClick={openNew}
@@ -300,7 +311,7 @@ export function Calendar() {
           {view === 'day' && (
             <DayView
               focus={focus}
-              events={events}
+              eventsByDate={eventsByDate}
               tasksByDate={tasksByDate}
               onEventClick={openEdit}
               onSlotClick={openNew}
@@ -481,21 +492,21 @@ function eventStyle(e: CalendarEvent): React.CSSProperties {
 
 function DayView({
   focus,
-  events,
+  eventsByDate,
   tasksByDate,
   onEventClick,
   onSlotClick,
   onTaskClick,
 }: {
   focus: Date
-  events: CalendarEvent[]
+  eventsByDate: Map<string, CalendarEvent[]>
   tasksByDate: Map<string, Task[]>
   onEventClick: (e: CalendarEvent) => void
   onSlotClick: (iso: string) => void
   onTaskClick: (t: Task) => void
 }) {
   const iso = toISO(focus)
-  const dayEvents = events.filter((e) => e.date === iso && e.startTime)
+  const dayEvents = (eventsByDate.get(iso) ?? []).filter((e) => e.startTime)
   const dayTasks = tasksByDate.get(iso) ?? []
   return (
     <div onDoubleClick={() => onSlotClick(iso)}>
@@ -525,14 +536,14 @@ function DayView({
 
 function WeekView({
   focus,
-  events,
+  eventsByDate,
   tasksByDate,
   onEventClick,
   onSlotClick,
   onTaskClick,
 }: {
   focus: Date
-  events: CalendarEvent[]
+  eventsByDate: Map<string, CalendarEvent[]>
   tasksByDate: Map<string, Task[]>
   onEventClick: (e: CalendarEvent) => void
   onSlotClick: (iso: string) => void
@@ -578,7 +589,7 @@ function WeekView({
       <div className="grid grid-cols-7">
         {days.map((d) => {
           const iso = toISO(d)
-          const dayEvents = events.filter((e) => e.date === iso && e.startTime)
+          const dayEvents = (eventsByDate.get(iso) ?? []).filter((e) => e.startTime)
           return (
             <div
               key={iso}

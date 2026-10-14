@@ -5,6 +5,14 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 
 export type EventTone = 'purple' | 'amber' | 'green' | 'red'
+export type EventRecurrence =
+  | 'NONE'
+  | 'DAILY'
+  | 'WEEKLY'
+  | 'BIWEEKLY'
+  | 'MONTHLY'
+  | 'YEARLY'
+  | 'EVERY_N_DAYS'
 
 export interface CalendarEvent {
   id: number
@@ -14,6 +22,8 @@ export interface CalendarEvent {
   startTime: string | null // "HH:mm:ss" or "HH:mm"
   endTime: string | null
   tone: EventTone
+  recurrence: EventRecurrence
+  recurrenceInterval: number
   notebookId: number | null
   notebookName: string | null
 }
@@ -26,6 +36,8 @@ export interface EventInput {
   startTime?: string | null // "HH:mm"
   endTime?: string | null
   tone?: EventTone
+  recurrence?: EventRecurrence
+  recurrenceInterval?: number
   notebookId?: number | null
 }
 

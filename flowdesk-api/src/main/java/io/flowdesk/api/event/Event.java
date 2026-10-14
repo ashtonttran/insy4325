@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -38,6 +39,16 @@ public class Event {
     /** Visual tone for the event block: purple, amber, green, red. */
     @Column(nullable = false)
     private String tone;
+
+    /** Recurrence rule: NONE, DAILY, WEEKLY, BIWEEKLY, MONTHLY, YEARLY, EVERY_N_DAYS. */
+    @Column(nullable = false)
+    @ColumnDefault("'NONE'")
+    private String recurrence = "NONE";
+
+    /** Interval for EVERY_N_DAYS (number of days); ignored for other rules. */
+    @Column(nullable = false)
+    @ColumnDefault("1")
+    private int recurrenceInterval = 1;
 
     @ManyToOne
     @JoinColumn(name = "notebook_id")
@@ -120,6 +131,22 @@ public class Event {
 
     public void setTone(String tone) {
         this.tone = tone;
+    }
+
+    public String getRecurrence() {
+        return recurrence;
+    }
+
+    public void setRecurrence(String recurrence) {
+        this.recurrence = recurrence;
+    }
+
+    public int getRecurrenceInterval() {
+        return recurrenceInterval;
+    }
+
+    public void setRecurrenceInterval(int recurrenceInterval) {
+        this.recurrenceInterval = recurrenceInterval;
     }
 
     public Notebook getNotebook() {

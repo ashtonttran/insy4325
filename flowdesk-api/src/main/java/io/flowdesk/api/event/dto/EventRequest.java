@@ -19,6 +19,8 @@ public record EventRequest(
         @JsonFormat(pattern = "HH:mm")
         LocalTime endTime,
         String tone,
+        String recurrence,
+        Integer recurrenceInterval,
         Long notebookId
 ) {
 }

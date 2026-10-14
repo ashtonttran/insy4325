@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react'
-import { Trash2, X } from 'lucide-react'
+import { Repeat, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useEventsStore } from '@/store/eventsStore'
-import type { CalendarEvent, EventInput, EventTone } from '@/api/eventsApi'
+import type { CalendarEvent, EventInput, EventRecurrence, EventTone } from '@/api/eventsApi'
 
 const TONES: { value: EventTone; label: string; swatch: string }[] = [
   { value: 'purple', label: 'Purple', swatch: 'bg-brand-500' },
   { value: 'amber', label: 'Amber', swatch: 'bg-amber-400' },
   { value: 'green', label: 'Green', swatch: 'bg-emerald-500' },
   { value: 'red', label: 'Red', swatch: 'bg-red-500' },
+]
+
+const RECURRENCES: { value: EventRecurrence; label: string }[] = [
+  { value: 'NONE', label: 'Does not repeat' },
+  { value: 'DAILY', label: 'Daily' },
+  { value: 'WEEKLY', label: 'Weekly' },
+  { value: 'BIWEEKLY', label: 'Every 2 weeks' },
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'YEARLY', label: 'Yearly' },
+  { value: 'EVERY_N_DAYS', label: 'Every N days' },
 ]
 
 export interface EventDialogProps {
@@ -31,6 +41,8 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [tone, setTone] = useState<EventTone>('purple')
+  const [recurrence, setRecurrence] = useState<EventRecurrence>('NONE')
+  const [recurrenceInterval, setRecurrenceInterval] = useState(2)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -41,6 +53,8 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
       setStartTime(event.startTime ? event.startTime.slice(0, 5) : '')
       setEndTime(event.endTime ? event.endTime.slice(0, 5) : '')
       setTone(event.tone)
+      setRecurrence(event.recurrence)
+      setRecurrenceInterval(event.recurrenceInterval || 2)
     } else {
       setDate(defaultDate)
     }
@@ -62,6 +76,8 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
       startTime: startTime || null,
       endTime: endTime || null,
       tone,
+      recurrence,
+      recurrenceInterval,
       notebookId: event?.notebookId ?? null,
     }
     const result = event ? await updateEvent(event.id, input) : await createEvent(input)
@@ -149,6 +165,37 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
                   }`}
                 />
               ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-ink-subtle">
+              <Repeat className="h-3.5 w-3.5" /> Repeat
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value as EventRecurrence)}
+                className="block w-full rounded-btn border border-line bg-white px-3 py-2 text-sm text-ink focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              >
+                {RECURRENCES.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+              {recurrence === 'EVERY_N_DAYS' && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    value={recurrenceInterval}
+                    onChange={(e) => setRecurrenceInterval(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-16 rounded-btn border border-line bg-white px-2 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-100"
+                  />
+                  <span className="text-xs text-ink-subtle">days</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
