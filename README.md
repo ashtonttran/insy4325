@@ -4,10 +4,6 @@ A modern student productivity workspace — notes, tasks, and a calendar in one
 clean app. Built as a React + TypeScript single-page app backed by a Java
 Spring Boot REST API with a SQLite database.
 
-> Course project (INSY 4325). Designed from Figma mockups and built out feature
-> by feature: a Notion-style note editor, a Kanban task board, and a full
-> calendar — all sharing one purple-accented design system.
-
 ---
 
 ## Features
