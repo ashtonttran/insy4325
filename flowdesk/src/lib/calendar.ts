@@ -5,7 +5,7 @@ export const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+export const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /** Parse an ISO date ("YYYY-MM-DD") into a local Date at midnight. */
 export function parseISO(iso: string): Date {
@@ -60,18 +60,18 @@ export function isSameDay(a: Date, b: Date): boolean {
   )
 }
 
-/** Monday-based weekday index (Mon=0 … Sun=6). */
-export function mondayIndex(date: Date): number {
-  return (date.getDay() + 6) % 7
+/** Sunday-based weekday index (Sun=0 … Sat=6). Matches WEEKDAY_LABELS order. */
+export function weekdayIndex(date: Date): number {
+  return date.getDay()
 }
 
-/** The Monday that starts the week containing `date`. */
+/** The Sunday that starts the week containing `date`. */
 export function startOfWeek(date: Date): Date {
-  return addDays(date, -mondayIndex(date))
+  return addDays(date, -weekdayIndex(date))
 }
 
 /**
- * The 42-cell grid (6 weeks) for a month view, starting on the Monday
+ * The 42-cell grid (6 weeks) for a month view, starting on the Sunday
  * on or before the 1st of the month.
  */
 export function monthGrid(focus: Date): Date[] {
@@ -80,7 +80,7 @@ export function monthGrid(focus: Date): Date[] {
   return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i))
 }
 
-/** The 7 days (Mon–Sun) of the week containing `focus`. */
+/** The 7 days (Sun–Sat) of the week containing `focus`. */
 export function weekDays(focus: Date): Date[] {
   const start = startOfWeek(focus)
   return Array.from({ length: 7 }, (_, i) => addDays(start, i))
@@ -141,6 +141,8 @@ function stepRecurrence(date: Date, recurrence: Recurrence, interval: number): D
  * Expand a recurring item's occurrences within [rangeStartISO, rangeEndISO]
  * (inclusive), starting from its due date. Returns ISO date strings.
  * Non-recurring items yield just their due date if it falls in range.
+ * When `untilISO` is provided, no occurrence after that date is produced
+ * (the series stops repeating on/after it).
  * Bounded by a hard cap so a tight interval can't loop unexpectedly.
  */
 export function expandRecurrence(
@@ -149,11 +151,14 @@ export function expandRecurrence(
   interval: number,
   rangeStartISO: string,
   rangeEndISO: string,
+  untilISO?: string | null,
 ): string[] {
   const out: string[] = []
   if (!startISO) return out
 
   const rangeEnd = parseISO(rangeEndISO)
+  // Cap expansion at the earlier of the visible range end and the "until" date.
+  const limit = untilISO && untilISO < rangeEndISO ? parseISO(untilISO) : rangeEnd
 
   // Non-recurring: single occurrence on the due date.
   if (recurrence === 'NONE') {
@@ -164,8 +169,8 @@ export function expandRecurrence(
   let cursor = parseISO(startISO)
   let guard = 0
   const MAX = 1000
-  // Walk forward from the due date, collecting occurrences up to the range end.
-  while (cursor <= rangeEnd && guard < MAX) {
+  // Walk forward from the due date, collecting occurrences up to the limit.
+  while (cursor <= limit && guard < MAX) {
     const iso = toISO(cursor)
     if (iso >= rangeStartISO && iso <= rangeEndISO) out.push(iso)
     cursor = stepRecurrence(cursor, recurrence, interval)

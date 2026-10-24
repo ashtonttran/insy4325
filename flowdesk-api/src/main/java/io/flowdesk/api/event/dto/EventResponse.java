@@ -16,8 +16,11 @@ public record EventResponse(
         String tone,
         String recurrence,
         int recurrenceInterval,
+        LocalDate recurrenceUntil,
         Long notebookId,
-        String notebookName
+        String notebookName,
+        Long calendarId,
+        String calendarName
 ) {
     public static EventResponse from(Event e) {
         return new EventResponse(
@@ -30,8 +33,11 @@ public record EventResponse(
                 e.getTone(),
                 e.getRecurrence(),
                 e.getRecurrenceInterval(),
+                e.getRecurrenceUntil(),
                 e.getNotebook() != null ? e.getNotebook().getId() : null,
-                e.getNotebook() != null ? e.getNotebook().getName() : null
+                e.getNotebook() != null ? e.getNotebook().getName() : null,
+                e.getCalendar() != null ? e.getCalendar().getId() : null,
+                e.getCalendar() != null ? e.getCalendar().getName() : null
         );
     }
 }

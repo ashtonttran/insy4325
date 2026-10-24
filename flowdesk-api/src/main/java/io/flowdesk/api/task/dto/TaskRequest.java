@@ -15,7 +15,9 @@ public record TaskRequest(
         LocalDate dueDate,
         String recurrence,
         Integer recurrenceInterval,
+        LocalDate recurrenceUntil,
         Long notebookId,
+        Long calendarId,
         List<SubtaskInput> subtasks
 ) {
     /** Inbound subtask; id is null for new items. */

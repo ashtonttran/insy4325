@@ -30,8 +30,11 @@ export interface Task {
   dueDate: string | null
   recurrence: TaskRecurrence
   recurrenceInterval: number
+  recurrenceUntil: string | null
   notebookId: number | null
   notebookName: string | null
+  calendarId: number | null
+  calendarName: string | null
   subtasks: Subtask[]
   createdAt: string
   updatedAt: string
@@ -53,7 +56,9 @@ export interface TaskInput {
   dueDate?: string | null
   recurrence?: TaskRecurrence
   recurrenceInterval?: number
+  recurrenceUntil?: string | null
   notebookId?: number | null
+  calendarId?: number | null
   subtasks?: SubtaskInput[]
 }
 

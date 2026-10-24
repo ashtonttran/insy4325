@@ -1,9 +1,9 @@
 export const currentUser = {
-  name: 'Sarah Jenkins',
-  email: 'sarah@flowdesk.io',
+  name: 'Ashton Tran',
+  email: 'ashton@flowdesk.com',
   avatar:
     'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=96&h=96&fit=crop&crop=faces',
-  bio: 'Product Lead at Contra Labs. Avid note-taker, task collector, and calendar optimizer. Building a more structured digital life one study plan at a time.',
+  bio: 'Developer of this product! Connect with me on LinkedIn :)',
   joined: 'January 2026',
 }
 

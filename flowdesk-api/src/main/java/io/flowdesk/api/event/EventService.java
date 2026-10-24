@@ -1,5 +1,7 @@
 package io.flowdesk.api.event;
 
+import io.flowdesk.api.calendar.Calendar;
+import io.flowdesk.api.calendar.CalendarRepository;
 import io.flowdesk.api.common.NotFoundException;
 import io.flowdesk.api.event.dto.EventRequest;
 import io.flowdesk.api.event.dto.EventResponse;
@@ -22,10 +24,13 @@ public class EventService {
 
     private final EventRepository events;
     private final NotebookRepository notebooks;
+    private final CalendarRepository calendars;
 
-    public EventService(EventRepository events, NotebookRepository notebooks) {
+    public EventService(EventRepository events, NotebookRepository notebooks,
+                        CalendarRepository calendars) {
         this.events = events;
         this.notebooks = notebooks;
+        this.calendars = calendars;
     }
 
     /** List events, optionally filtered to an inclusive [from, to] date range. */
@@ -56,8 +61,11 @@ public class EventService {
                 normalizeTone(req.tone()),
                 resolveNotebook(req.notebookId())
         );
-        event.setRecurrence(normalizeRecurrence(req.recurrence()));
+        event.setCalendar(resolveCalendar(req.calendarId()));
+        String recurrence = normalizeRecurrence(req.recurrence());
+        event.setRecurrence(recurrence);
         event.setRecurrenceInterval(normalizeInterval(req.recurrenceInterval()));
+        event.setRecurrenceUntil(normalizeUntil(recurrence, req.recurrenceUntil()));
         return EventResponse.from(events.save(event));
     }
 
@@ -70,9 +78,12 @@ public class EventService {
         event.setStartTime(req.startTime());
         event.setEndTime(req.endTime());
         event.setTone(normalizeTone(req.tone()));
-        event.setRecurrence(normalizeRecurrence(req.recurrence()));
+        String recurrence = normalizeRecurrence(req.recurrence());
+        event.setRecurrence(recurrence);
         event.setRecurrenceInterval(normalizeInterval(req.recurrenceInterval()));
+        event.setRecurrenceUntil(normalizeUntil(recurrence, req.recurrenceUntil()));
         event.setNotebook(resolveNotebook(req.notebookId()));
+        event.setCalendar(resolveCalendar(req.calendarId()));
         event.touch();
         return EventResponse.from(events.save(event));
     }
@@ -96,6 +107,12 @@ public class EventService {
                 .orElseThrow(() -> new NotFoundException("Notebook " + notebookId + " not found"));
     }
 
+    private Calendar resolveCalendar(Long calendarId) {
+        if (calendarId == null) return null;
+        return calendars.findById(calendarId)
+                .orElseThrow(() -> new NotFoundException("Calendar " + calendarId + " not found"));
+    }
+
     private String normalizeTone(String tone) {
         if (tone == null || tone.isBlank()) return "purple";
         String t = tone.trim().toLowerCase();
@@ -111,5 +128,11 @@ public class EventService {
     private int normalizeInterval(Integer interval) {
         if (interval == null || interval < 1) return 1;
         return interval;
+    }
+
+    /** A "repeat until" date only applies to recurring items. */
+    private LocalDate normalizeUntil(String recurrence, LocalDate until) {
+        if ("NONE".equals(recurrence)) return null;
+        return until;
     }
 }

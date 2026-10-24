@@ -21,6 +21,8 @@ public record EventRequest(
         String tone,
         String recurrence,
         Integer recurrenceInterval,
-        Long notebookId
+        LocalDate recurrenceUntil,
+        Long notebookId,
+        Long calendarId
 ) {
 }

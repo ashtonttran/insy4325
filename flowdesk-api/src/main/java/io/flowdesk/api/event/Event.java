@@ -1,5 +1,6 @@
 package io.flowdesk.api.event;
 
+import io.flowdesk.api.calendar.Calendar;
 import io.flowdesk.api.notebook.Notebook;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -50,9 +51,20 @@ public class Event {
     @ColumnDefault("1")
     private int recurrenceInterval = 1;
 
+    /**
+     * Optional date (inclusive) after which the event stops repeating. Null means
+     * it repeats indefinitely. Ignored when recurrence is NONE.
+     */
+    private LocalDate recurrenceUntil;
+
     @ManyToOne
     @JoinColumn(name = "notebook_id")
     private Notebook notebook;
+
+    /** Optional calendar this event belongs to; null means the default calendar. */
+    @ManyToOne
+    @JoinColumn(name = "calendar_id")
+    private Calendar calendar;
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -65,6 +77,11 @@ public class Event {
 
     public Event(String title, String location, LocalDate date, LocalTime startTime,
                  LocalTime endTime, String tone, Notebook notebook) {
+        this(title, location, date, startTime, endTime, tone, notebook, null);
+    }
+
+    public Event(String title, String location, LocalDate date, LocalTime startTime,
+                 LocalTime endTime, String tone, Notebook notebook, Calendar calendar) {
         this.title = title;
         this.location = location;
         this.date = date;
@@ -72,6 +89,7 @@ public class Event {
         this.endTime = endTime;
         this.tone = tone;
         this.notebook = notebook;
+        this.calendar = calendar;
         Instant now = Instant.now();
         this.createdAt = now;
         this.updatedAt = now;
@@ -149,12 +167,28 @@ public class Event {
         this.recurrenceInterval = recurrenceInterval;
     }
 
+    public LocalDate getRecurrenceUntil() {
+        return recurrenceUntil;
+    }
+
+    public void setRecurrenceUntil(LocalDate recurrenceUntil) {
+        this.recurrenceUntil = recurrenceUntil;
+    }
+
     public Notebook getNotebook() {
         return notebook;
     }
 
     public void setNotebook(Notebook notebook) {
         this.notebook = notebook;
+    }
+
+    public Calendar getCalendar() {
+        return calendar;
+    }
+
+    public void setCalendar(Calendar calendar) {
+        this.calendar = calendar;
     }
 
     public Instant getCreatedAt() {

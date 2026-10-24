@@ -10,6 +10,8 @@ import io.flowdesk.api.task.Task;
 import io.flowdesk.api.task.TaskRepository;
 import io.flowdesk.api.event.Event;
 import io.flowdesk.api.event.EventRepository;
+import io.flowdesk.api.calendar.Calendar;
+import io.flowdesk.api.calendar.CalendarRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,14 +31,23 @@ public class DataSeeder {
 
     @Bean
     CommandLineRunner seed(FolderRepository folders, NotebookRepository notebooks,
-                           NoteRepository notes, TaskRepository tasks, EventRepository events) {
+                           NoteRepository notes, TaskRepository tasks, EventRepository events,
+                           CalendarRepository calendars) {
         return args -> {
             if (folders.count() > 0 || notebooks.count() > 0 || notes.count() > 0
-                    || tasks.count() > 0 || events.count() > 0) {
+                    || tasks.count() > 0 || events.count() > 0 || calendars.count() > 0) {
                 return; // already seeded
             }
 
             final LocalDate today = LocalDate.now();
+
+            // --- Calendars (group events and tasks) ---
+            Calendar schoolCal = calendars.save(new Calendar(
+                    "Classes", "Lectures, seminars, and study sessions.", "purple"));
+            Calendar deadlinesCal = calendars.save(new Calendar(
+                    "Deadlines", "Assignments, exams, and due dates.", "red"));
+            Calendar personalCal = calendars.save(new Calendar(
+                    "Personal", "Everything outside of coursework.", "green"));
 
             // Example folders grouping the notebooks.
             Folder school = folders.save(new Folder("School"));
@@ -103,6 +114,7 @@ public class DataSeeder {
                     "Write a 2000-word essay analyzing the primary causes of World War II. "
                             + "Include at least 5 academic sources. Follow MLA format guidelines.",
                     "IN_PROGRESS", "MEDIUM", today.plusDays(3), nb.get("History 201"));
+            essay.setCalendar(deadlinesCal);
             essay.addSubtask("Research primary sources").setDone(true);
             essay.addSubtask("Write outline");
             essay.addSubtask("Complete first draft");
@@ -112,6 +124,7 @@ public class DataSeeder {
                     "Read Chapter 5 - Biology",
                     "Cover cell division and the cell cycle ahead of Thursday's lecture.",
                     "TODO", "HIGH", today.plusDays(1), nb.get("Biology 101"));
+            reading.setCalendar(schoolCal);
             reading.addSubtask("Skim chapter headings");
             reading.addSubtask("Take notes on mitosis");
             tasks.save(reading);
@@ -120,12 +133,14 @@ public class DataSeeder {
                     "Math problem set #7",
                     "Complete problems 1-20 on hypothesis testing.",
                     "TODO", "MEDIUM", today.plusDays(2), nb.get("Math 301"));
+            problemSet.setCalendar(deadlinesCal);
             tasks.save(problemSet);
 
             Task midterm = new Task(
                     "Study for Chemistry midterm",
                     "Review lab reports and lecture slides for the midterm.",
                     "TODO", "LOW", today.plusDays(7), nb.get("Personal"));
+            midterm.setCalendar(schoolCal);
             tasks.save(midterm);
 
             // An overdue task so the dashboard "Overdue" badge is visible.
@@ -133,6 +148,7 @@ public class DataSeeder {
                     "Submit lab safety form",
                     "Hand in the signed safety agreement to the chemistry office.",
                     "TODO", "HIGH", today.minusDays(2), nb.get("Personal"));
+            overdue.setCalendar(deadlinesCal);
             tasks.save(overdue);
 
             // A daily recurring task to show recurrence on the calendar.
@@ -142,6 +158,7 @@ public class DataSeeder {
                     "TODO", "LOW", today, nb.get("Personal"));
             daily.setRecurrence("DAILY");
             daily.setRecurrenceInterval(1);
+            daily.setCalendar(personalCal);
             tasks.save(daily);
 
             // A weekly recurring task.
@@ -151,37 +168,39 @@ public class DataSeeder {
                     "TODO", "MEDIUM", today.plusDays(1), nb.get("Math 301"));
             weekly.setRecurrence("WEEKLY");
             weekly.setRecurrenceInterval(1);
+            weekly.setCalendar(schoolCal);
             tasks.save(weekly);
 
             Task review = new Task(
                     "Review lecture notes - Psychology",
                     "Consolidate this week's notes into the study guide.",
                     "DONE", "LOW", today.minusDays(1), nb.get("Psychology"));
+            review.setCalendar(schoolCal);
             review.addSubtask("Summarize key terms").setDone(true);
             tasks.save(review);
 
             // --- Calendar events (anchored to today) ---
             Event biologyLecture = new Event("Biology 101 Lecture", "Science Hall 204", today,
-                    LocalTime.of(9, 30), LocalTime.of(10, 30), "purple", nb.get("Biology 101"));
+                    LocalTime.of(9, 30), LocalTime.of(10, 30), "purple", nb.get("Biology 101"), schoolCal);
             biologyLecture.setRecurrence("WEEKLY");
             biologyLecture.setRecurrenceInterval(1);
             events.save(biologyLecture);
             events.save(new Event("Study Group - Math", "Library Study Room B", today,
-                    LocalTime.of(12, 0), LocalTime.of(13, 0), "amber", nb.get("Math 301")));
+                    LocalTime.of(12, 0), LocalTime.of(13, 0), "amber", nb.get("Math 301"), schoolCal));
             events.save(new Event("History 201 Seminar", "Humanities Building 112", today,
-                    LocalTime.of(15, 0), LocalTime.of(16, 15), "green", nb.get("History 201")));
+                    LocalTime.of(15, 0), LocalTime.of(16, 15), "green", nb.get("History 201"), schoolCal));
 
             events.save(new Event("Chemistry Lab", "Chem Lab 3", today.plusDays(2),
-                    LocalTime.of(14, 0), LocalTime.of(16, 0), "purple", nb.get("Personal")));
+                    LocalTime.of(14, 0), LocalTime.of(16, 0), "purple", nb.get("Personal"), schoolCal));
             events.save(new Event("Essay Deadline", null, today.plusDays(3),
-                    LocalTime.of(23, 59), null, "red", nb.get("History 201")));
+                    LocalTime.of(23, 59), null, "red", nb.get("History 201"), deadlinesCal));
             events.save(new Event("Psychology Review Session", "Room 210", today.plusDays(4),
-                    LocalTime.of(10, 0), LocalTime.of(11, 30), "green", nb.get("Psychology")));
+                    LocalTime.of(10, 0), LocalTime.of(11, 30), "green", nb.get("Psychology"), schoolCal));
             events.save(new Event("Midterm - Chemistry", "Exam Hall A", today.plusDays(10),
-                    LocalTime.of(9, 0), LocalTime.of(11, 0), "red", nb.get("Personal")));
+                    LocalTime.of(9, 0), LocalTime.of(11, 0), "red", nb.get("Personal"), deadlinesCal));
             // A couple earlier in the week so the week view isn't one-sided.
             events.save(new Event("Office Hours - History", "Humanities 300", today.minusDays(1),
-                    LocalTime.of(13, 0), LocalTime.of(14, 0), "green", nb.get("History 201")));
+                    LocalTime.of(13, 0), LocalTime.of(14, 0), "green", nb.get("History 201"), schoolCal));
         };
     }
 }

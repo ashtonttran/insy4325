@@ -1,5 +1,6 @@
 package io.flowdesk.api.task;
 
+import io.flowdesk.api.calendar.Calendar;
 import io.flowdesk.api.notebook.Notebook;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -55,10 +56,21 @@ public class Task {
     @ColumnDefault("1")
     private int recurrenceInterval = 1;
 
+    /**
+     * Optional date (inclusive) after which the task stops repeating. Null means
+     * it repeats indefinitely. Ignored when recurrence is NONE.
+     */
+    private LocalDate recurrenceUntil;
+
     /** Optional course/notebook this task relates to. */
     @ManyToOne
     @JoinColumn(name = "notebook_id")
     private Notebook notebook;
+
+    /** Optional calendar this task appears on; null means the default calendar. */
+    @ManyToOne
+    @JoinColumn(name = "calendar_id")
+    private Calendar calendar;
 
     @OneToMany(mappedBy = "task", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @OrderBy("id ASC")
@@ -75,12 +87,18 @@ public class Task {
 
     public Task(String title, String description, String status, String priority,
                 LocalDate dueDate, Notebook notebook) {
+        this(title, description, status, priority, dueDate, notebook, null);
+    }
+
+    public Task(String title, String description, String status, String priority,
+                LocalDate dueDate, Notebook notebook, Calendar calendar) {
         this.title = title;
         this.description = description;
         this.status = status;
         this.priority = priority;
         this.dueDate = dueDate;
         this.notebook = notebook;
+        this.calendar = calendar;
         Instant now = Instant.now();
         this.createdAt = now;
         this.updatedAt = now;
@@ -157,12 +175,28 @@ public class Task {
         this.recurrenceInterval = recurrenceInterval;
     }
 
+    public LocalDate getRecurrenceUntil() {
+        return recurrenceUntil;
+    }
+
+    public void setRecurrenceUntil(LocalDate recurrenceUntil) {
+        this.recurrenceUntil = recurrenceUntil;
+    }
+
     public Notebook getNotebook() {
         return notebook;
     }
 
     public void setNotebook(Notebook notebook) {
         this.notebook = notebook;
+    }
+
+    public Calendar getCalendar() {
+        return calendar;
+    }
+
+    public void setCalendar(Calendar calendar) {
+        this.calendar = calendar;
     }
 
     public List<Subtask> getSubtasks() {

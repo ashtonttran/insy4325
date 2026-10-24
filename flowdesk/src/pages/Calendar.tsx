@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckSquare, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { CalendarRange, CheckSquare, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import { useEventsStore, type CalendarView } from '@/store/eventsStore'
 import { useTasksStore } from '@/store/tasksStore'
+import { useCalendarsStore } from '@/store/calendarsStore'
 import { useUiStore } from '@/store/uiStore'
 import type { CalendarEvent } from '@/api/eventsApi'
 import type { Task } from '@/api/tasksApi'
+import type { Calendar as CalendarType } from '@/api/calendarsApi'
 import { EventDialog } from '@/components/calendar/EventDialog'
 import {
   MONTH_NAMES,
@@ -41,6 +43,18 @@ const toneDot: Record<string, string> = {
   red: 'bg-red-500',
 }
 
+/**
+ * Task priority colors, matching the dot colors on the Tasks board
+ * (HIGH = red, MEDIUM = orange, LOW = green). Each entry provides the
+ * matching chip background, left-accent border, text, and dot classes so a
+ * task's priority reads the same wherever it appears.
+ */
+const taskPriorityChip: Record<string, { chip: string; dot: string }> = {
+  HIGH: { chip: 'border-l-accent-red bg-red-50 text-red-800', dot: 'bg-accent-red' },
+  MEDIUM: { chip: 'border-l-accent-orange bg-amber-50 text-amber-900', dot: 'bg-accent-orange' },
+  LOW: { chip: 'border-l-accent-green bg-emerald-50 text-emerald-900', dot: 'bg-accent-green' },
+}
+
 /** A task shown on the calendar carries this uniform shape. */
 interface TaskChipProps {
   task: Task
@@ -48,22 +62,26 @@ interface TaskChipProps {
   compact?: boolean
 }
 
-/** Small task chip used in month cells and all-day strips. */
+/** Small task chip used in month cells and all-day strips, colored by priority. */
 function TaskChip({ task, onClick, compact }: TaskChipProps) {
   const done = task.status === 'DONE'
+  const style = taskPriorityChip[task.priority] ?? taskPriorityChip.MEDIUM
   return (
     <button
       onClick={(e) => {
         e.stopPropagation()
         onClick()
       }}
-      title={`Task: ${task.title}`}
+      title={`Task (${task.priority.toLowerCase()} priority): ${task.title}`}
       className={cn(
-        'flex w-full items-center gap-1 truncate rounded border border-dashed border-ink-subtle/40 bg-canvas px-1 py-0.5 text-left text-ink-muted',
+        'flex w-full items-center gap-1 truncate rounded-r border border-l-4 border-line px-1 py-0.5 text-left',
+        style.chip,
+        done && 'opacity-60',
         compact ? 'text-[11px]' : 'text-xs',
       )}
     >
-      <CheckSquare className="h-3 w-3 shrink-0 text-ink-subtle" />
+      <CheckSquare className={cn('h-3 w-3 shrink-0', done ? 'text-ink-subtle' : 'text-current')} />
+      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', style.dot)} />
       <span className={cn('truncate', done && 'line-through')}>{task.title}</span>
     </button>
   )
@@ -77,15 +95,37 @@ export function Calendar() {
   const tasks = useTasksStore((s) => s.tasks)
   const fetchTasks = useTasksStore((s) => s.fetchAll)
   const selectTask = useTasksStore((s) => s.selectTask)
+  const calendars = useCalendarsStore((s) => s.calendars)
+  const fetchCalendars = useCalendarsStore((s) => s.fetchAll)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CalendarEvent | null>(null)
   const [dialogDate, setDialogDate] = useState(focusDate)
 
+  // Calendar ids that are currently hidden. Empty = everything visible.
+  const [hiddenCalendars, setHiddenCalendars] = useState<Set<number>>(new Set())
+  // Whether items not assigned to any calendar are shown.
+  const [showUnassigned, setShowUnassigned] = useState(true)
+
   useEffect(() => {
     void fetchAll()
     void fetchTasks()
-  }, [fetchAll, fetchTasks])
+    void fetchCalendars()
+  }, [fetchAll, fetchTasks, fetchCalendars])
+
+  const isCalendarVisible = (calendarId: number | null) => {
+    if (calendarId == null) return showUnassigned
+    return !hiddenCalendars.has(calendarId)
+  }
+
+  const toggleCalendar = (calendarId: number) => {
+    setHiddenCalendars((prev) => {
+      const next = new Set(prev)
+      if (next.has(calendarId)) next.delete(calendarId)
+      else next.add(calendarId)
+      return next
+    })
+  }
 
   // If Quick Add requested a new event, open the dialog on arrival.
   const openNewEventRequested = useUiStore((s) => s.openNewEventOnCalendar)
@@ -120,12 +160,14 @@ export function Calendar() {
   const eventsByDate = useMemo(() => {
     const map = new Map<string, CalendarEvent[]>()
     for (const e of events) {
+      if (e.calendarId == null ? !showUnassigned : hiddenCalendars.has(e.calendarId)) continue
       const dates = expandRecurrence(
         e.date,
         (e.recurrence ?? 'NONE') as Recurrence,
         e.recurrenceInterval ?? 1,
         visibleRange.start,
         visibleRange.end,
+        e.recurrenceUntil,
       )
       for (const iso of dates) {
         const list = map.get(iso) ?? []
@@ -134,7 +176,7 @@ export function Calendar() {
       }
     }
     return map
-  }, [events, visibleRange])
+  }, [events, visibleRange, hiddenCalendars, showUnassigned])
 
   // Tasks keyed by date, expanding recurring tasks across every occurrence
   // that falls within the visible range (projected at display time; no extra
@@ -143,12 +185,14 @@ export function Calendar() {
     const map = new Map<string, Task[]>()
     for (const t of tasks) {
       if (!t.dueDate) continue
+      if (t.calendarId == null ? !showUnassigned : hiddenCalendars.has(t.calendarId)) continue
       const dates = expandRecurrence(
         t.dueDate,
         (t.recurrence ?? 'NONE') as Recurrence,
         t.recurrenceInterval ?? 1,
         visibleRange.start,
         visibleRange.end,
+        t.recurrenceUntil,
       )
       for (const iso of dates) {
         const list = map.get(iso) ?? []
@@ -157,7 +201,7 @@ export function Calendar() {
       }
     }
     return map
-  }, [tasks, visibleRange])
+  }, [tasks, visibleRange, hiddenCalendars, showUnassigned])
 
   const openNew = (dateISO: string) => {
     setEditing(null)
@@ -172,6 +216,11 @@ export function Calendar() {
   const openTask = (task: Task) => {
     selectTask(task.id)
     navigate('/tasks')
+  }
+  // Jump to the day view focused on a specific date (used from the month grid).
+  const openDay = (dateISO: string) => {
+    setFocusDate(dateISO)
+    setView('day')
   }
 
   const navArrow = (dir: -1 | 1) => {
@@ -204,7 +253,7 @@ export function Calendar() {
       return `${MONTH_NAMES[a.getMonth()].slice(0, 3)} ${a.getDate()} – ${MONTH_NAMES[b.getMonth()].slice(0, 3)} ${b.getDate()}, ${b.getFullYear()}`
     }
     if (view === 'day') {
-      return `${WEEKDAY_LABELS[(focus.getDay() + 6) % 7]}, ${MONTH_NAMES[focus.getMonth()]} ${focus.getDate()}`
+      return `${WEEKDAY_LABELS[focus.getDay()]}, ${MONTH_NAMES[focus.getMonth()]} ${focus.getDate()}`
     }
     return null
   }
@@ -286,6 +335,14 @@ export function Calendar() {
             )}
           </div>
 
+          <CalendarLegend
+            calendars={calendars}
+            isVisible={isCalendarVisible}
+            onToggle={toggleCalendar}
+            showUnassigned={showUnassigned}
+            onToggleUnassigned={() => setShowUnassigned((v) => !v)}
+          />
+
           {loading && <p className="px-1 py-2 text-sm text-ink-subtle">Loading…</p>}
 
           {view === 'month' && (
@@ -293,7 +350,8 @@ export function Calendar() {
               focus={focus}
               eventsByDate={eventsByDate}
               tasksByDate={tasksByDate}
-              onDayClick={openNew}
+              onAddEvent={openNew}
+              onOpenDay={openDay}
               onEventClick={openEdit}
               onTaskClick={openTask}
             />
@@ -356,23 +414,98 @@ function ViewToggle({ view, onChange }: { view: CalendarView; onChange: (v: Cale
   )
 }
 
+/** A toggleable legend of calendars used to filter what the board shows. */
+function CalendarLegend({
+  calendars,
+  isVisible,
+  onToggle,
+  showUnassigned,
+  onToggleUnassigned,
+}: {
+  calendars: CalendarType[]
+  isVisible: (calendarId: number | null) => boolean
+  onToggle: (calendarId: number) => void
+  showUnassigned: boolean
+  onToggleUnassigned: () => void
+}) {
+  if (calendars.length === 0) return null
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-line pb-3">
+      <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-ink-subtle">
+        Calendars
+      </span>
+      {calendars.map((c) => {
+        const on = isVisible(c.id)
+        return (
+          <button
+            key={c.id}
+            onClick={() => onToggle(c.id)}
+            aria-pressed={on}
+            title={c.description ?? c.name}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+              on ? 'border-line bg-white text-ink' : 'border-line bg-canvas text-ink-subtle',
+            )}
+          >
+            <span
+              className={cn(
+                'h-2.5 w-2.5 rounded-full',
+                toneDot[c.tone] ?? toneDot.purple,
+                !on && 'opacity-30',
+              )}
+            />
+            <span className={cn(!on && 'line-through')}>{c.name}</span>
+          </button>
+        )
+      })}
+      <button
+        onClick={onToggleUnassigned}
+        aria-pressed={showUnassigned}
+        title="Events and tasks not assigned to a calendar"
+        className={cn(
+          'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
+          showUnassigned ? 'border-line bg-white text-ink' : 'border-line bg-canvas text-ink-subtle',
+        )}
+      >
+        <span className={cn('h-2.5 w-2.5 rounded-full bg-ink-subtle', !showUnassigned && 'opacity-30')} />
+        <span className={cn(!showUnassigned && 'line-through')}>Unassigned</span>
+      </button>
+    </div>
+  )
+}
+
 function MonthView({
   focus,
   eventsByDate,
   tasksByDate,
-  onDayClick,
+  onAddEvent,
+  onOpenDay,
   onEventClick,
   onTaskClick,
 }: {
   focus: Date
   eventsByDate: Map<string, CalendarEvent[]>
   tasksByDate: Map<string, Task[]>
-  onDayClick: (iso: string) => void
+  onAddEvent: (iso: string) => void
+  onOpenDay: (iso: string) => void
   onEventClick: (e: CalendarEvent) => void
   onTaskClick: (t: Task) => void
 }) {
   const grid = monthGrid(focus)
   const today = parseISO(todayInCentral())
+  // The ISO date whose action menu is currently open (null = none).
+  const [menuIso, setMenuIso] = useState<string | null>(null)
+
+  // Dismiss the day menu on Escape for keyboard users.
+  useEffect(() => {
+    if (!menuIso) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuIso(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuIso])
+
   return (
     <div>
       <div className="grid grid-cols-7 border-b border-line pb-2">
@@ -389,13 +522,15 @@ function MonthView({
           const dayTasks = tasksByDate.get(iso) ?? []
           const inMonth = day.getMonth() === focus.getMonth()
           const items = dayEvents.length + dayTasks.length
+          const menuOpen = menuIso === iso
           return (
             <div
               key={iso}
-              onClick={() => onDayClick(iso)}
+              onClick={() => setMenuIso((cur) => (cur === iso ? null : iso))}
               className={cn(
-                'min-h-[92px] cursor-pointer border-b border-r border-line p-1.5 transition-colors hover:bg-canvas',
+                'relative min-h-[92px] cursor-pointer border-b border-r border-line p-1.5 transition-colors hover:bg-canvas',
                 !inMonth && 'bg-canvas/50',
+                menuOpen && 'bg-canvas ring-1 ring-inset ring-brand-200',
               )}
             >
               <div className="mb-1 flex justify-end">
@@ -433,11 +568,72 @@ function MonthView({
                   <span className="pl-1 text-[10px] text-ink-subtle">+{items - 3} more</span>
                 )}
               </div>
+
+              {menuOpen && (
+                <DayActionMenu
+                  onClose={() => setMenuIso(null)}
+                  onOpenDay={() => {
+                    setMenuIso(null)
+                    onOpenDay(iso)
+                  }}
+                  onAddEvent={() => {
+                    setMenuIso(null)
+                    onAddEvent(iso)
+                  }}
+                />
+              )}
             </div>
           )
         })}
       </div>
     </div>
+  )
+}
+
+/** Small popover shown when a month-view day is clicked. */
+function DayActionMenu({
+  onClose,
+  onOpenDay,
+  onAddEvent,
+}: {
+  onClose: () => void
+  onOpenDay: () => void
+  onAddEvent: () => void
+}) {
+  return (
+    <>
+      {/* Click-away backdrop; stops the click from reselecting the cell. */}
+      <div
+        className="fixed inset-0 z-30"
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
+        aria-hidden
+      />
+      <div
+        role="menu"
+        onClick={(e) => e.stopPropagation()}
+        className="absolute left-1/2 top-9 z-40 w-44 -translate-x-1/2 overflow-hidden rounded-card border border-line bg-white py-1 shadow-popover"
+      >
+        <button
+          role="menuitem"
+          onClick={onOpenDay}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-canvas"
+        >
+          <CalendarRange className="h-4 w-4 shrink-0 text-ink-muted" />
+          Open day view
+        </button>
+        <button
+          role="menuitem"
+          onClick={onAddEvent}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink hover:bg-canvas"
+        >
+          <Plus className="h-4 w-4 shrink-0 text-ink-muted" />
+          Add event
+        </button>
+      </div>
+    </>
   )
 }
 
@@ -552,12 +748,18 @@ function WeekView({
   const days = weekDays(focus)
   const today = parseISO(todayInCentral())
   const anyTasks = days.some((d) => (tasksByDate.get(toISO(d)) ?? []).length > 0)
+  const hours = Array.from({ length: DAY_END - DAY_START + 1 }, (_, i) => DAY_START + i)
+  // One shared column template keeps the day headers, the all-day task row, and
+  // the time columns perfectly aligned: a fixed time-label gutter + 7 day columns.
+  const weekCols = 'grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))]'
   return (
     <div>
-      <div className="grid grid-cols-7 border-b border-line pb-2 pl-14">
+      <div className={cn(weekCols, 'border-b border-line pb-2')}>
+        {/* Spacer above the time gutter */}
+        <div aria-hidden />
         {days.map((d) => (
           <div key={toISO(d)} className="text-center">
-            <div className="text-xs text-ink-subtle">{WEEKDAY_LABELS[(d.getDay() + 6) % 7]}</div>
+            <div className="text-xs text-ink-subtle">{WEEKDAY_LABELS[d.getDay()]}</div>
             <div
               className={cn(
                 'mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs',
@@ -572,7 +774,10 @@ function WeekView({
 
       {/* All-day task row across the week */}
       {anyTasks && (
-        <div className="grid grid-cols-7 border-b border-line py-1 pl-14">
+        <div className={cn(weekCols, 'border-b border-line py-1')}>
+          <div className="pr-2 text-right text-[10px] font-semibold uppercase tracking-wide text-ink-subtle">
+            All day
+          </div>
           {days.map((d) => {
             const dt = tasksByDate.get(toISO(d)) ?? []
             return (
@@ -586,14 +791,26 @@ function WeekView({
         </div>
       )}
 
-      <div className="grid grid-cols-7">
+      <div className={weekCols}>
+        {/* Time-label gutter, aligned with the hour gridlines in each day column */}
+        <div className="relative" style={{ height: `${(DAY_END - DAY_START + 1) * HOUR_PX}px` }}>
+          {hours.map((h, i) => (
+            <span
+              key={h}
+              className="absolute right-2 -translate-y-1/2 text-[10px] text-ink-subtle"
+              style={{ top: `${i * HOUR_PX}px` }}
+            >
+              {formatTime(`${String(h).padStart(2, '0')}:00`)}
+            </span>
+          ))}
+        </div>
         {days.map((d) => {
           const iso = toISO(d)
           const dayEvents = (eventsByDate.get(iso) ?? []).filter((e) => e.startTime)
           return (
             <div
               key={iso}
-              className="relative border-r border-line"
+              className="relative border-r border-line first-of-type:border-l"
               onDoubleClick={() => onSlotClick(iso)}
               style={{ height: `${(DAY_END - DAY_START + 1) * HOUR_PX}px` }}
             >
@@ -675,23 +892,30 @@ function AgendaPanel({
               Tasks due
             </p>
             <div className="space-y-1.5">
-              {dayTasks.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => onTaskClick(t)}
-                  className="flex w-full items-center gap-2 rounded-btn border border-dashed border-line px-3 py-2 text-left hover:bg-canvas"
-                >
-                  <CheckSquare className="h-4 w-4 shrink-0 text-ink-subtle" />
-                  <span
+              {dayTasks.map((t) => {
+                const style = taskPriorityChip[t.priority] ?? taskPriorityChip.MEDIUM
+                const done = t.status === 'DONE'
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => onTaskClick(t)}
+                    title={`${t.priority.toLowerCase()} priority`}
                     className={cn(
-                      'text-sm text-ink',
-                      t.status === 'DONE' && 'text-ink-subtle line-through',
+                      'flex w-full items-center gap-2 rounded-r-btn border border-l-4 border-line px-3 py-2 text-left hover:brightness-95',
+                      style.chip,
+                      done && 'opacity-60',
                     )}
                   >
-                    {t.title}
-                  </span>
-                </button>
-              ))}
+                    <CheckSquare
+                      className={cn('h-4 w-4 shrink-0', done ? 'text-ink-subtle' : 'text-current')}
+                    />
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', style.dot)} />
+                    <span className={cn('text-sm', done && 'line-through opacity-80')}>
+                      {t.title}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}

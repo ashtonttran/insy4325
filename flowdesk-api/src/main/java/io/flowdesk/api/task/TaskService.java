@@ -1,5 +1,7 @@
 package io.flowdesk.api.task;
 
+import io.flowdesk.api.calendar.Calendar;
+import io.flowdesk.api.calendar.CalendarRepository;
 import io.flowdesk.api.common.NotFoundException;
 import io.flowdesk.api.notebook.Notebook;
 import io.flowdesk.api.notebook.NotebookRepository;
@@ -26,10 +28,13 @@ public class TaskService {
 
     private final TaskRepository tasks;
     private final NotebookRepository notebooks;
+    private final CalendarRepository calendars;
 
-    public TaskService(TaskRepository tasks, NotebookRepository notebooks) {
+    public TaskService(TaskRepository tasks, NotebookRepository notebooks,
+                       CalendarRepository calendars) {
         this.tasks = tasks;
         this.notebooks = notebooks;
+        this.calendars = calendars;
     }
 
     @Transactional(readOnly = true)
@@ -52,8 +57,11 @@ public class TaskService {
                 req.dueDate(),
                 resolveNotebook(req.notebookId())
         );
-        task.setRecurrence(normalizeRecurrence(req.recurrence()));
+        task.setCalendar(resolveCalendar(req.calendarId()));
+        String recurrence = normalizeRecurrence(req.recurrence());
+        task.setRecurrence(recurrence);
         task.setRecurrenceInterval(normalizeInterval(req.recurrenceInterval()));
+        task.setRecurrenceUntil(normalizeUntil(recurrence, req.recurrenceUntil()));
         applySubtasks(task, req);
         return TaskResponse.from(tasks.save(task));
     }
@@ -66,9 +74,12 @@ public class TaskService {
         task.setStatus(normalizeStatus(req.status()));
         task.setPriority(normalizePriority(req.priority()));
         task.setDueDate(req.dueDate());
-        task.setRecurrence(normalizeRecurrence(req.recurrence()));
+        String recurrence = normalizeRecurrence(req.recurrence());
+        task.setRecurrence(recurrence);
         task.setRecurrenceInterval(normalizeInterval(req.recurrenceInterval()));
+        task.setRecurrenceUntil(normalizeUntil(recurrence, req.recurrenceUntil()));
         task.setNotebook(resolveNotebook(req.notebookId()));
+        task.setCalendar(resolveCalendar(req.calendarId()));
         reconcileSubtasks(task, req);
         task.touch();
         return TaskResponse.from(tasks.save(task));
@@ -87,10 +98,18 @@ public class TaskService {
                         && task.getDueDate() != null;
 
         if (completingRecurring) {
-            task.setDueDate(nextOccurrence(task.getDueDate(), task.getRecurrence(), task.getRecurrenceInterval()));
-            task.setStatus("TODO");
-            // Reset subtasks for the fresh occurrence.
-            task.getSubtasks().forEach(st -> st.setDone(false));
+            LocalDate upcoming = nextOccurrence(
+                    task.getDueDate(), task.getRecurrence(), task.getRecurrenceInterval());
+            LocalDate until = task.getRecurrenceUntil();
+            if (until != null && upcoming.isAfter(until)) {
+                // The series has reached its end date; close the task for good.
+                task.setStatus("DONE");
+            } else {
+                task.setDueDate(upcoming);
+                task.setStatus("TODO");
+                // Reset subtasks for the fresh occurrence.
+                task.getSubtasks().forEach(st -> st.setDone(false));
+            }
         } else {
             task.setStatus(next);
         }
@@ -171,6 +190,12 @@ public class TaskService {
                 .orElseThrow(() -> new NotFoundException("Notebook " + notebookId + " not found"));
     }
 
+    private Calendar resolveCalendar(Long calendarId) {
+        if (calendarId == null) return null;
+        return calendars.findById(calendarId)
+                .orElseThrow(() -> new NotFoundException("Calendar " + calendarId + " not found"));
+    }
+
     private String normalizeStatus(String status) {
         String s = status == null ? "TODO" : status.trim().toUpperCase();
         if (!STATUSES.contains(s)) {
@@ -201,5 +226,11 @@ public class TaskService {
     private int normalizeInterval(Integer interval) {
         if (interval == null || interval < 1) return 1;
         return interval;
+    }
+
+    /** A "repeat until" date only applies to recurring tasks. */
+    private LocalDate normalizeUntil(String recurrence, LocalDate until) {
+        if ("NONE".equals(recurrence)) return null;
+        return until;
     }
 }

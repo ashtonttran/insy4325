@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Repeat, Trash2, X } from 'lucide-react'
+import { CalendarDays, Repeat, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useEventsStore } from '@/store/eventsStore'
+import { useCalendarsStore } from '@/store/calendarsStore'
 import type { CalendarEvent, EventInput, EventRecurrence, EventTone } from '@/api/eventsApi'
 
 const TONES: { value: EventTone; label: string; swatch: string }[] = [
@@ -21,6 +22,26 @@ const RECURRENCES: { value: EventRecurrence; label: string }[] = [
   { value: 'EVERY_N_DAYS', label: 'Every N days' },
 ]
 
+/** Natural-language prefix for the "until" row, e.g. "Repeats weekly". */
+function recurrenceEndLabel(recurrence: EventRecurrence, interval: number): string {
+  switch (recurrence) {
+    case 'DAILY':
+      return 'Repeats daily'
+    case 'WEEKLY':
+      return 'Repeats weekly'
+    case 'BIWEEKLY':
+      return 'Repeats biweekly'
+    case 'MONTHLY':
+      return 'Repeats monthly'
+    case 'YEARLY':
+      return 'Repeats yearly'
+    case 'EVERY_N_DAYS':
+      return `Repeats every ${interval} day${interval === 1 ? '' : 's'}`
+    default:
+      return 'Repeats'
+  }
+}
+
 export interface EventDialogProps {
   /** Existing event to edit, or null to create. */
   event: CalendarEvent | null
@@ -34,6 +55,8 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
   const createEvent = useEventsStore((s) => s.createEvent)
   const updateEvent = useEventsStore((s) => s.updateEvent)
   const deleteEvent = useEventsStore((s) => s.deleteEvent)
+  const calendars = useCalendarsStore((s) => s.calendars)
+  const fetchCalendars = useCalendarsStore((s) => s.fetchAll)
 
   const [title, setTitle] = useState('')
   const [location, setLocation] = useState('')
@@ -43,7 +66,14 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
   const [tone, setTone] = useState<EventTone>('purple')
   const [recurrence, setRecurrence] = useState<EventRecurrence>('NONE')
   const [recurrenceInterval, setRecurrenceInterval] = useState(2)
+  const [recurrenceUntil, setRecurrenceUntil] = useState('')
+  const [calendarId, setCalendarId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Ensure the calendar list is available for the picker.
+    if (calendars.length === 0) void fetchCalendars()
+  }, [calendars.length, fetchCalendars])
 
   useEffect(() => {
     if (event) {
@@ -55,8 +85,12 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
       setTone(event.tone)
       setRecurrence(event.recurrence)
       setRecurrenceInterval(event.recurrenceInterval || 2)
+      setRecurrenceUntil(event.recurrenceUntil ?? '')
+      setCalendarId(event.calendarId ?? null)
     } else {
       setDate(defaultDate)
+      setRecurrenceUntil('')
+      setCalendarId(null)
     }
   }, [event, defaultDate])
 
@@ -78,7 +112,9 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
       tone,
       recurrence,
       recurrenceInterval,
+      recurrenceUntil: recurrence === 'NONE' ? null : recurrenceUntil || null,
       notebookId: event?.notebookId ?? null,
+      calendarId,
     }
     const result = event ? await updateEvent(event.id, input) : await createEvent(input)
     if (result) onClose()
@@ -168,6 +204,26 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
             </div>
           </div>
 
+          {calendars.length > 0 && (
+            <div>
+              <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-ink-subtle">
+                <CalendarDays className="h-3.5 w-3.5" /> Calendar
+              </label>
+              <select
+                value={calendarId ?? ''}
+                onChange={(e) => setCalendarId(e.target.value ? Number(e.target.value) : null)}
+                className="block w-full rounded-btn border border-line bg-white px-3 py-2 text-sm text-ink focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+              >
+                <option value="">No calendar</option>
+                {calendars.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-ink-subtle">
               <Repeat className="h-3.5 w-3.5" /> Repeat
@@ -197,6 +253,33 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
                 </div>
               )}
             </div>
+
+            {/* Optional end date for the recurrence */}
+            {recurrence !== 'NONE' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-subtle">
+                  {recurrenceEndLabel(recurrence, recurrenceInterval)} until:
+                </span>
+                <input
+                  type="date"
+                  value={recurrenceUntil}
+                  min={date || undefined}
+                  onChange={(e) => setRecurrenceUntil(e.target.value)}
+                  className="rounded-btn border border-line bg-white px-2 py-1 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-100"
+                />
+                {recurrenceUntil ? (
+                  <button
+                    type="button"
+                    onClick={() => setRecurrenceUntil('')}
+                    className="text-xs text-ink-subtle underline hover:text-ink"
+                  >
+                    clear
+                  </button>
+                ) : (
+                  <span className="text-xs text-ink-subtle">(no end date)</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

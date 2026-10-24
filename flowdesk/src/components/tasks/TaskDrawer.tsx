@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Plus, Repeat, Trash2, X } from 'lucide-react'
+import { CalendarDays, Plus, Repeat, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import { useTasksStore } from '@/store/tasksStore'
+import { useCalendarsStore } from '@/store/calendarsStore'
 import type { SubtaskInput, TaskPriority, TaskRecurrence, TaskStatus } from '@/api/tasksApi'
 
 const STATUSES: { value: TaskStatus; label: string }[] = [
@@ -27,12 +28,34 @@ const RECURRENCES: { value: TaskRecurrence; label: string }[] = [
   { value: 'EVERY_N_DAYS', label: 'Every N days' },
 ]
 
+/** Natural-language prefix for the "until" row, e.g. "Repeats weekly". */
+function recurrenceEndLabel(recurrence: TaskRecurrence, interval: number): string {
+  switch (recurrence) {
+    case 'DAILY':
+      return 'Repeats daily'
+    case 'WEEKLY':
+      return 'Repeats weekly'
+    case 'BIWEEKLY':
+      return 'Repeats biweekly'
+    case 'MONTHLY':
+      return 'Repeats monthly'
+    case 'YEARLY':
+      return 'Repeats yearly'
+    case 'EVERY_N_DAYS':
+      return `Repeats every ${interval} day${interval === 1 ? '' : 's'}`
+    default:
+      return 'Repeats'
+  }
+}
+
 /** Slide-over panel to view and edit a task and its subtasks. */
 export function TaskDrawer() {
   const selectedTask = useTasksStore((s) => s.selectedTask)()
   const selectTask = useTasksStore((s) => s.selectTask)
   const updateTask = useTasksStore((s) => s.updateTask)
   const deleteTask = useTasksStore((s) => s.deleteTask)
+  const calendars = useCalendarsStore((s) => s.calendars)
+  const fetchCalendars = useCalendarsStore((s) => s.fetchAll)
 
   const open = Boolean(selectedTask)
 
@@ -44,8 +67,14 @@ export function TaskDrawer() {
   const [dueDate, setDueDate] = useState('')
   const [recurrence, setRecurrence] = useState<TaskRecurrence>('NONE')
   const [recurrenceInterval, setRecurrenceInterval] = useState(2)
+  const [recurrenceUntil, setRecurrenceUntil] = useState('')
+  const [calendarId, setCalendarId] = useState<number | null>(null)
   const [subtasks, setSubtasks] = useState<SubtaskInput[]>([])
   const [newSub, setNewSub] = useState('')
+
+  useEffect(() => {
+    if (calendars.length === 0) void fetchCalendars()
+  }, [calendars.length, fetchCalendars])
 
   useEffect(() => {
     if (!selectedTask) return
@@ -56,6 +85,8 @@ export function TaskDrawer() {
     setDueDate(selectedTask.dueDate ?? '')
     setRecurrence(selectedTask.recurrence)
     setRecurrenceInterval(selectedTask.recurrenceInterval || 2)
+    setRecurrenceUntil(selectedTask.recurrenceUntil ?? '')
+    setCalendarId(selectedTask.calendarId ?? null)
     setSubtasks(selectedTask.subtasks.map((s) => ({ id: s.id, title: s.title, done: s.done })))
   }, [selectedTask])
 
@@ -72,7 +103,9 @@ export function TaskDrawer() {
       dueDate: dueDate || null,
       recurrence,
       recurrenceInterval,
+      recurrenceUntil: recurrence === 'NONE' ? null : recurrenceUntil || null,
       notebookId: selectedTask.notebookId,
+      calendarId,
       subtasks,
     })
     close()
@@ -169,6 +202,23 @@ export function TaskDrawer() {
                 className="mt-1 block w-full rounded-btn border border-line bg-white px-2 py-1 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-100"
               />
             </label>
+            {calendars.length > 0 && (
+              <label className="col-span-2 flex items-center gap-1.5 text-xs font-medium text-ink-subtle">
+                <CalendarDays className="h-3.5 w-3.5" /> Calendar
+                <select
+                  value={calendarId ?? ''}
+                  onChange={(e) => setCalendarId(e.target.value ? Number(e.target.value) : null)}
+                  className="ml-auto block w-40 rounded-btn border border-line bg-white px-2 py-1 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-100"
+                >
+                  <option value="">No calendar</option>
+                  {calendars.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {selectedTask.notebookName && (
               <div className="col-span-2 text-xs text-ink-subtle">
                 Course: <span className="text-ink">{selectedTask.notebookName}</span>
@@ -206,6 +256,34 @@ export function TaskDrawer() {
                 </div>
               )}
             </div>
+
+            {/* Optional end date for the recurrence */}
+            {recurrence !== 'NONE' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-subtle">
+                  {recurrenceEndLabel(recurrence, recurrenceInterval)} until:
+                </span>
+                <input
+                  type="date"
+                  value={recurrenceUntil}
+                  min={dueDate || undefined}
+                  onChange={(e) => setRecurrenceUntil(e.target.value)}
+                  className="rounded-btn border border-line bg-white px-2 py-1 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-100"
+                />
+                {recurrenceUntil ? (
+                  <button
+                    type="button"
+                    onClick={() => setRecurrenceUntil('')}
+                    className="text-xs text-ink-subtle underline hover:text-ink"
+                  >
+                    clear
+                  </button>
+                ) : (
+                  <span className="text-xs text-ink-subtle">(no end date)</span>
+                )}
+              </div>
+            )}
+
             {recurrence !== 'NONE' && !dueDate && (
               <p className="mt-1.5 text-[11px] text-amber-600">
                 Set a due date — repeating tasks advance from the due date when completed.

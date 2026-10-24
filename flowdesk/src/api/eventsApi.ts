@@ -24,8 +24,11 @@ export interface CalendarEvent {
   tone: EventTone
   recurrence: EventRecurrence
   recurrenceInterval: number
+  recurrenceUntil: string | null
   notebookId: number | null
   notebookName: string | null
+  calendarId: number | null
+  calendarName: string | null
 }
 
 /** Shape sent when creating or updating an event. */
@@ -38,7 +41,9 @@ export interface EventInput {
   tone?: EventTone
   recurrence?: EventRecurrence
   recurrenceInterval?: number
+  recurrenceUntil?: string | null
   notebookId?: number | null
+  calendarId?: number | null
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
