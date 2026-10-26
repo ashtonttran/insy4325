@@ -12,37 +12,58 @@ Spring Boot REST API with a SQLite database.
 - **WYSIWYG rich-text editor** (Tiptap) — headings, bold/italic/underline,
   bullet/numbered/checklists, links, blockquotes, code blocks, dividers, and
   **tables**. Formatting appears live as you type.
-- **Folders → Notebooks → Notes** hierarchy with a unified, Apple-Notes-style
-  navigation tree.
-- **Drag and drop** — drag notes into notebooks, and notebooks into folders.
+- **Notes browser** with a compact two-row header: a **My Notes** heading plus
+  **New Note**, and a four-way view switcher — **All Notes / Folders /
+  Favorites / Recent** — shown as equal-width icon tiles.
+- **List and grid** browsing modes, with sorting by last edited, date created,
+  or title.
+- **Folders view** — a collapsible **Folders → Notebooks → Notes** explorer with
+  note counts, right inside the browser panel.
+- **Move to notebook** via a searchable dialog (create a notebook on the fly),
+  plus **bulk move** for multiple selected notes. Drag-and-drop still works too.
+- **Focused editor** with a clickable notebook breadcrumb, a collapsible browser
+  (focus mode), and a comfortable reading width.
 - **Autosave** with a save-status indicator (Saving / Saved / retry on error).
 - **Favorites**, **Recent**, and full-text **search** across notes.
 - Notes are stored as Markdown, so content stays portable.
 
 ### Tasks
 - **Kanban board** (To Do / In Progress / Done) with drag-and-drop between
-  columns.
+  columns and an **All / Active / Completed** filter.
 - **Subtasks**, priority, due date, and a per-task notebook/course link.
 - **Recurring tasks** — daily, weekly, every 2 weeks, monthly, yearly, or every
-  N days. Completing a recurring task advances it to the next occurrence.
+  N days, with an optional **"repeats until" end date**. Completing a recurring
+  task advances it to the next occurrence (and stops at the end date).
 
 ### Calendar
-- **Month / Week / Day** views with an agenda side panel.
-- Create and edit events with times, locations, and colors.
+- **Month / Week / Day** views plus a **daily agenda sidebar** that updates when
+  you select a day.
+- **Events and tasks are visually distinct** — events use a calendar icon on a
+  light-purple pill; tasks use a checkbox with neutral/priority styling, and can
+  be completed right from the calendar.
+- **Named calendars** (categories) with an All / Events / Tasks filter and
+  advanced filters (completion, priority, category, overdue).
+- Month view caps each day at two items with a **"+N more"** overflow.
 - **Tasks appear on the calendar** by due date, including every projected
-  occurrence of recurring tasks.
-- Month/year dropdowns plus prev/next and "Today" for quick navigation.
+  occurrence of recurring tasks (honoring the end date).
+
+### Connections between notes, tasks & events
+- **Link a note to tasks and events** — create a task or schedule a study-session
+  event straight from a note, or link an existing one.
+- A note's **Linked items** section lists its tasks/events; task and event
+  editors show their **linked notes**, with one-click navigation between them.
 
 ### Dashboard
-- Live snapshot: open tasks (with overdue badges), today's agenda, recent
-  notes, and quick stats.
+- Personalized greeting plus a live snapshot: tasks due soon, today's events,
+  weekly completion, today's agenda, and recent notes.
 - **Quick Capture** turns a thought into a note instantly.
 
 ### Across the app
 - **Quick Add** menu to create a note, task, or event from anywhere.
 - Global workspace **search**.
-- Consistent design system: purple accent, rounded corners, soft shadows,
-  light-gray canvas.
+- Consistent design system: purple accent, rounded corners, subtle borders,
+  light-gray canvas. **Responsive** down to mobile (collapsible sidebar),
+  accessible focus states, and reduced-motion support.
 
 ---
 
@@ -70,11 +91,12 @@ Spring Boot REST API with a SQLite database.
 │       └── lib/          # helpers (dates, markdown, cn)
 ├── flowdesk-api/      # Java Spring Boot backend (Maven)
 │   └── src/main/java/io/flowdesk/api/
-│       ├── note/         # notes
+│       ├── note/         # notes + note↔task/event links
 │       ├── notebook/     # notebooks
 │       ├── folder/       # folders
 │       ├── task/         # tasks + subtasks
 │       ├── event/        # calendar events
+│       ├── calendar/     # named calendars (categories)
 │       ├── search/       # global search
 │       └── common/       # seeder, CORS, error handling
 ├── start-flowdesk.cmd # one-click launcher (Windows)
@@ -136,9 +158,9 @@ set `VITE_API_URL` before `npm run dev`.
 
 - The database is a single SQLite file, `flowdesk-api/flowdesk.db`, created
   automatically on first run.
-- On an empty database, the app **seeds demo data** (folders, notebooks, notes,
-  tasks, and events) dated relative to the current day, so it looks populated
-  immediately.
+- On an empty database, the app **seeds demo data** (calendars, folders,
+  notebooks, notes, tasks, and events) dated relative to the current day, so it
+  looks populated immediately.
 - To reset to fresh demo data, stop the backend, delete
   `flowdesk-api/flowdesk.db`, and restart.
 
@@ -151,10 +173,12 @@ Base URL: `http://localhost:8080/api`
 | Resource   | Endpoints |
 |------------|-----------|
 | Notes      | `GET/POST /notes`, `GET/PUT/DELETE /notes/{id}`, `PATCH /notes/{id}/favorite` |
+| Note links | `GET/POST /notes/{id}/links`, `DELETE /notes/{id}/links/{linkId}` |
 | Notebooks  | `GET/POST /notebooks`, `PUT/DELETE /notebooks/{id}` |
 | Folders    | `GET/POST /folders`, `PUT/DELETE /folders/{id}` |
-| Tasks      | `GET/POST /tasks`, `GET/PUT/DELETE /tasks/{id}`, `PATCH /tasks/{id}/status` |
-| Events     | `GET/POST /events` (`?from=&to=`), `GET/PUT/DELETE /events/{id}` |
+| Tasks      | `GET/POST /tasks`, `GET/PUT/DELETE /tasks/{id}`, `PATCH /tasks/{id}/status`, `GET /tasks/{id}/notes` |
+| Events     | `GET/POST /events` (`?from=&to=`), `GET/PUT/DELETE /events/{id}`, `GET /events/{id}/notes` |
+| Calendars  | `GET/POST /calendars`, `GET/PUT/DELETE /calendars/{id}` |
 | Search     | `GET /search?q=` (notes + tasks) |
 
 ---
