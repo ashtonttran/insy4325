@@ -1,5 +1,8 @@
 package io.flowdesk.api.task;
 
+import io.flowdesk.api.note.NoteLink;
+import io.flowdesk.api.note.NoteLinkService;
+import io.flowdesk.api.note.dto.LinkedNoteResponse;
 import io.flowdesk.api.task.dto.StatusRequest;
 import io.flowdesk.api.task.dto.TaskRequest;
 import io.flowdesk.api.task.dto.TaskResponse;
@@ -25,9 +28,11 @@ import java.util.List;
 public class TaskController {
 
     private final TaskService service;
+    private final NoteLinkService noteLinks;
 
-    public TaskController(TaskService service) {
+    public TaskController(TaskService service, NoteLinkService noteLinks) {
         this.service = service;
+        this.noteLinks = noteLinks;
     }
 
     @GetMapping
@@ -61,5 +66,11 @@ public class TaskController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Notes linked to this task (for the task detail view). */
+    @GetMapping("/{id}/notes")
+    public List<LinkedNoteResponse> linkedNotes(@PathVariable Long id) {
+        return noteLinks.notesForTarget(NoteLink.TYPE_TASK, id);
     }
 }

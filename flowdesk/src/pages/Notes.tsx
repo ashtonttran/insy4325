@@ -1,12 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { FileText, Plus } from 'lucide-react'
 import { AppLayout } from '@/components/layout/AppLayout'
+import { Button } from '@/components/ui/Button'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { cn } from '@/lib/cn'
 import { useNotesStore } from '@/store/notesStore'
-import { NotesNav, type NotesFilter } from '@/components/notes/NotesNav'
+import { useNoteLinksStore } from '@/store/noteLinksStore'
+import { useTasksStore } from '@/store/tasksStore'
+import { useEventsStore } from '@/store/eventsStore'
+import { NotesBrowser } from '@/components/notes/NotesBrowser'
 import { NoteEditor } from '@/components/notes/NoteEditor'
+import { NoteContextMenu } from '@/components/notes/NoteContextMenu'
+import { MoveToNotebookDialog } from '@/components/notes/MoveToNotebookDialog'
+import { LinkItemDialog } from '@/components/notes/LinkItemDialog'
+import { LinkedItems } from '@/components/notes/LinkedItems'
+import { TaskDrawer } from '@/components/tasks/TaskDrawer'
+import { EventDialog } from '@/components/calendar/EventDialog'
+import type { Note, NoteLink } from '@/api/notesApi'
+import { todayInCentral } from '@/lib/calendar'
 
-/** Notes Library — three-column workspace: nav panel + expanded editor. */
+/** Notes workspace — a notes browser plus a focused editor with linked items. */
 export function Notes() {
+  const navigate = useNavigate()
   const {
     notes,
     notebooks,
@@ -30,26 +46,49 @@ export function Notes() {
     selectedNote,
   } = useNotesStore()
 
-  const [filter, setFilter] = useState<NotesFilter>({ kind: 'all' })
-  // On narrow screens we show either the list or the editor, not both.
+  // Tasks/events are needed for the "link existing item" picker.
+  const tasks = useTasksStore((s) => s.tasks)
+  const fetchTasks = useTasksStore((s) => s.fetchAll)
+  const createTask = useTasksStore((s) => s.createTask)
+  const selectTask = useTasksStore((s) => s.selectTask)
+  const events = useEventsStore((s) => s.events)
+  const fetchEvents = useEventsStore((s) => s.fetchAll)
+
+  // Linked items for the open note.
+  const links = useNoteLinksStore((s) => s.links)
+  const linksLoading = useNoteLinksStore((s) => s.loading)
+  const loadLinks = useNoteLinksStore((s) => s.load)
+  const linkItem = useNoteLinksStore((s) => s.link)
+  const unlinkItem = useNoteLinksStore((s) => s.unlink)
+
   const [mobileView, setMobileView] = useState<'list' | 'editor'>('list')
+  const [focusMode, setFocusMode] = useState(false)
+
+  // Dialog + menu state
+  const [menu, setMenu] = useState<{ note: Note; anchor: { x: number; y: number } } | null>(null)
+  const [moveTarget, setMoveTarget] = useState<{ noteIds: number[]; current: number | null } | null>(null)
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false)
+  const [eventDraft, setEventDraft] = useState<{ title: string; noteId: number } | null>(null)
+
+  // Bulk selection
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   useEffect(() => {
     void fetchAll()
-  }, [fetchAll])
+    void fetchTasks()
+    void fetchEvents()
+  }, [fetchAll, fetchTasks, fetchEvents])
 
   const current = selectedNote()
 
-  // The notebook a new note should land in, based on the active filter.
-  const activeNotebookId = filter.kind === 'notebook' ? filter.notebookId : null
+  // Keep the linked-items panel in sync with the open note.
+  useEffect(() => {
+    void loadLinks(current?.id ?? null)
+  }, [current?.id, loadLinks])
 
   const handleNewNote = async () => {
-    const created = await createNote({
-      title: 'Untitled Note',
-      content: '',
-      tag: null,
-      notebookId: activeNotebookId,
-    })
+    const created = await createNote({ title: 'Untitled Note', content: '', tag: null, notebookId: null })
     if (created) {
       selectNote(created.id)
       setMobileView('editor')
@@ -61,26 +100,65 @@ export function Notes() {
     setMobileView('editor')
   }
 
-  // Keyboard shortcuts: Cmd/Ctrl+Alt+N new note; Cmd/Ctrl+K focuses search.
+  // Keyboard shortcut: Cmd/Ctrl+Alt+N new note.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.altKey && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault()
         void handleNewNote()
-      } else if (mod && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault()
-        const search = document.querySelector<HTMLInputElement>(
-          'input[placeholder="Search notes..."]',
-        )
-        search?.focus()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [activeNotebookId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Folder / notebook prompt helpers (kept simple; styled dialogs are a future pass).
+  /* ----------------------------------------------------- integrations */
+
+  // Create a task from a note, link it, and open the task editor.
+  const createTaskFromNote = async (note: Note) => {
+    const created = await createTask({
+      title: `Review ${note.title}`.slice(0, 120),
+      status: 'TODO',
+      priority: 'MEDIUM',
+      subtasks: [],
+    })
+    if (created) {
+      // Ensure links are loaded for this note, then link + open the drawer.
+      await loadLinks(note.id)
+      await linkItem('TASK', created.id)
+      selectTask(created.id)
+    }
+  }
+
+  // Open the event dialog prefilled to schedule a study session for a note.
+  const scheduleStudySession = async (note: Note) => {
+    await loadLinks(note.id)
+    setEventDraft({ title: `Study: ${note.title}`.slice(0, 120), noteId: note.id })
+  }
+
+  /* -------------------------------------------------------- bulk move */
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+    setSelectionMode(false)
+  }
+  const toggleSelected = (id: number) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const doMove = async (noteIds: number[], notebookId: number | null) => {
+    for (const id of noteIds) {
+      await moveNoteToNotebook(id, notebookId)
+    }
+  }
+
+  /* -------- folder / notebook management (reuses the notes store) -------- */
+  // Lightweight prompts keep management in one place without new dialogs.
   const promptCreateFolder = () => {
     const name = window.prompt('New folder name')?.trim()
     if (name) void createFolder(name)
@@ -89,66 +167,31 @@ export function Notes() {
     const name = window.prompt('New notebook name')?.trim()
     if (name) void createNotebook(name, folderId)
   }
-  const promptRenameFolder = (id: number, currentName: string) => {
-    const name = window.prompt('Rename folder', currentName)?.trim()
+  const promptRenameFolder = (id: number, current: string) => {
+    const name = window.prompt('Rename folder', current)?.trim()
     if (name) void renameFolder(id, name)
   }
   const confirmDeleteFolder = (id: number, name: string) => {
-    if (
-      window.confirm(`Delete folder "${name}"? Its notebooks move to Ungrouped; notes are kept.`)
-    ) {
+    if (window.confirm(`Delete folder "${name}"? Its notebooks move to Ungrouped; notes are kept.`)) {
       void deleteFolder(id)
     }
   }
-  const promptRenameNotebook = (id: number, currentName: string) => {
-    const name = window.prompt('Rename notebook', currentName)?.trim()
+  const promptRenameNotebook = (id: number, current: string) => {
+    const name = window.prompt('Rename notebook', current)?.trim()
     if (name) void renameNotebook(id, name)
   }
   const confirmDeleteNotebook = (id: number, name: string, noteCount: number) => {
-    const noteNote =
+    const suffix =
       noteCount > 0
         ? ` Its ${noteCount} ${noteCount === 1 ? 'note' : 'notes'} will be kept and moved to Unfiled.`
         : ''
-    if (window.confirm(`Delete notebook "${name}"?${noteNote}`)) {
-      // If we're currently viewing this notebook, fall back to All Notes.
-      if (filter.kind === 'notebook' && filter.notebookId === id) {
-        setFilter({ kind: 'all' })
-      }
+    if (window.confirm(`Delete notebook "${name}"?${suffix}`)) {
       void deleteNotebook(id)
     }
   }
 
-  const navPanel = useMemo(
-    () => (
-      <NotesNav
-        notes={notes}
-        notebooks={notebooks}
-        folders={folders}
-        selectedNoteId={selectedNoteId}
-        filter={filter}
-        onFilterChange={setFilter}
-        onSelectNote={handleSelectNote}
-        onNewNote={handleNewNote}
-        onCreateFolder={promptCreateFolder}
-        onCreateNotebook={promptCreateNotebook}
-        onRenameFolder={promptRenameFolder}
-        onDeleteFolder={confirmDeleteFolder}
-        onRenameNotebook={promptRenameNotebook}
-        onDeleteNotebook={confirmDeleteNotebook}
-        onMoveNoteToNotebook={(noteId, notebookId) => void moveNoteToNotebook(noteId, notebookId)}
-        onMoveNotebookToFolder={(notebookId, folderId) => void moveNotebook(notebookId, folderId)}
-      />
-    ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [notes, notebooks, folders, selectedNoteId, filter],
-  )
-
   return (
-    <AppLayout
-      title="Notes Library"
-      subtitle="All your notes, thoughts, and documents in a simple clean space."
-      flush
-    >
+    <AppLayout title="Notes" subtitle="All your notes, thoughts, and documents in one place." flush>
       {error && (
         <div className="border-b border-red-200 bg-red-50 px-6 py-2 text-sm text-red-700">
           {error}
@@ -156,28 +199,57 @@ export function Notes() {
       )}
 
       <div className="flex h-full min-h-0">
-        {/* Column 2 — Notes navigation */}
+        {/* Notes browser */}
         <div
           className={cn(
-            'w-full shrink-0 lg:w-[300px]',
+            'w-full shrink-0 lg:w-[340px]',
             mobileView === 'editor' && 'hidden lg:block',
+            focusMode && 'lg:hidden',
           )}
         >
-          {navPanel}
+          <NotesBrowser
+            notes={notes}
+            notebooks={notebooks}
+            folders={folders}
+            selectedNoteId={selectedNoteId}
+            onSelectNote={handleSelectNote}
+            onNewNote={handleNewNote}
+            onToggleFavorite={(id) => void toggleFavorite(id)}
+            onOpenMenu={(note, anchor) => setMenu({ note, anchor })}
+            selectionMode={selectionMode}
+            selectedIds={selectedIds}
+            onToggleSelectionMode={() => {
+              setSelectionMode((v) => !v)
+              setSelectedIds(new Set())
+            }}
+            onToggleSelected={toggleSelected}
+            onBulkMove={() =>
+              setMoveTarget({ noteIds: Array.from(selectedIds), current: null })
+            }
+            onClearSelection={clearSelection}
+            onCreateFolder={promptCreateFolder}
+            onCreateNotebook={promptCreateNotebook}
+            onRenameFolder={promptRenameFolder}
+            onDeleteFolder={confirmDeleteFolder}
+            onRenameNotebook={promptRenameNotebook}
+            onDeleteNotebook={confirmDeleteNotebook}
+            onMoveNoteToNotebook={(noteId, notebookId) => void moveNoteToNotebook(noteId, notebookId)}
+            onMoveNotebookToFolder={(notebookId, folderId) => void moveNotebook(notebookId, folderId)}
+          />
         </div>
 
-        {/* Column 3 — Editor */}
-        <div
-          className={cn(
-            'min-w-0 flex-1',
-            mobileView === 'list' && 'hidden lg:block',
-          )}
-        >
+        {/* Editor */}
+        <div className={cn('min-w-0 flex-1', mobileView === 'list' && 'hidden lg:block')}>
           {current ? (
             <NoteEditor
               key={current.id}
               note={current}
               notebooks={notebooks}
+              focusMode={focusMode}
+              onToggleFocus={() => setFocusMode((v) => !v)}
+              onBreadcrumbClick={() =>
+                setMoveTarget({ noteIds: [current.id], current: current.notebookId })
+              }
               onSave={(patch) =>
                 updateNote(current.id, {
                   title: patch.title,
@@ -192,32 +264,122 @@ export function Notes() {
                 void deleteNote(current.id)
                 setMobileView('list')
               }}
-              onMoveToNotebook={(notebookId) =>
-                updateNote(current.id, {
-                  title: current.title,
-                  content: current.content,
-                  tag: current.tag,
-                  favorite: current.favorite,
-                  notebookId,
-                })
-              }
+              onMoveToNotebook={(notebookId) => void moveNoteToNotebook(current.id, notebookId)}
               onBack={() => setMobileView('list')}
+              belowContent={
+                <LinkedItems
+                  links={links}
+                  loading={linksLoading}
+                  onOpen={openLinkedItem}
+                  onUnlink={(l) => void unlinkItem(l.id)}
+                  onLinkExisting={() => setLinkDialogOpen(true)}
+                />
+              }
             />
           ) : (
             <div className="flex h-full items-center justify-center bg-white">
-              <div className="text-center">
-                <p className="text-sm text-ink-muted">Select a note to start writing</p>
-                <button
-                  onClick={handleNewNote}
-                  className="mt-3 rounded-btn bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600"
-                >
-                  New Note
-                </button>
-              </div>
+              <EmptyState
+                icon={FileText}
+                title="Select a note to start writing"
+                description="Choose a note from the list, or create a new one."
+                action={
+                  <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={handleNewNote}>
+                    New Note
+                  </Button>
+                }
+              />
             </div>
           )}
         </div>
       </div>
+
+      {/* Per-note context menu */}
+      {menu && (
+        <NoteContextMenu
+          note={menu.note}
+          anchor={menu.anchor}
+          onClose={() => setMenu(null)}
+          actions={{
+            onToggleFavorite: () => void toggleFavorite(menu.note.id),
+            onMove: () =>
+              setMoveTarget({ noteIds: [menu.note.id], current: menu.note.notebookId }),
+            onCreateTask: () => void createTaskFromNote(menu.note),
+            onScheduleStudy: () => void scheduleStudySession(menu.note),
+            onLinkExisting: () => {
+              selectNote(menu.note.id)
+              setLinkDialogOpen(true)
+            },
+            onDelete: () => {
+              if (window.confirm(`Delete "${menu.note.title}"? This cannot be undone.`)) {
+                void deleteNote(menu.note.id)
+              }
+            },
+          }}
+        />
+      )}
+
+      {/* Move to notebook (single or bulk) */}
+      {moveTarget && (
+        <MoveToNotebookDialog
+          notebooks={notebooks}
+          folders={folders}
+          currentNotebookId={moveTarget.current}
+          count={moveTarget.noteIds.length}
+          onCancel={() => setMoveTarget(null)}
+          onConfirm={async (notebookId) => {
+            await doMove(moveTarget.noteIds, notebookId)
+            setMoveTarget(null)
+            clearSelection()
+          }}
+          onCreateNotebook={async (name) => {
+            await createNotebook(name, null)
+            // Return the newly created notebook so the dialog can select it.
+            return useNotesStore.getState().notebooks.find((nb) => nb.name === name) ?? null
+          }}
+        />
+      )}
+
+      {/* Link an existing task/event to the current note */}
+      {linkDialogOpen && current && (
+        <LinkItemDialog
+          tasks={tasks}
+          events={events}
+          existingLinks={links}
+          onCancel={() => setLinkDialogOpen(false)}
+          onLink={(type, id) => {
+            void linkItem(type, id)
+            setLinkDialogOpen(false)
+          }}
+        />
+      )}
+
+      {/* Schedule study session — create an event, then link it */}
+      {eventDraft && (
+        <EventDialog
+          event={null}
+          defaultDate={todayInCentral()}
+          defaultTitle={eventDraft.title}
+          onClose={() => setEventDraft(null)}
+          onCreated={(created) => {
+            void (async () => {
+              await loadLinks(eventDraft.noteId)
+              await linkItem('EVENT', created.id)
+            })()
+          }}
+        />
+      )}
+
+      {/* Task editor opens in place when a linked task is opened */}
+      <TaskDrawer />
     </AppLayout>
   )
+
+  // Open a linked item in its own workspace.
+  function openLinkedItem(link: NoteLink) {
+    if (link.targetType === 'TASK') {
+      selectTask(link.targetId)
+    } else {
+      navigate('/calendar')
+    }
+  }
 }

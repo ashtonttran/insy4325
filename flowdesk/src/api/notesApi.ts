@@ -45,6 +45,31 @@ export interface NotebookInput {
   folderId?: number | null
 }
 
+export type LinkTargetType = 'TASK' | 'EVENT'
+
+/** A task/event linked to a note, with the target's resolved display fields. */
+export interface NoteLink {
+  id: number
+  targetType: LinkTargetType
+  targetId: number
+  title: string
+  // Task-only
+  status: string | null
+  dueDate: string | null
+  // Event-only
+  date: string | null
+  startTime: string | null
+  endTime: string | null
+}
+
+/** A note summary returned when asking a task/event which notes link to it. */
+export interface LinkedNote {
+  id: number
+  title: string
+  notebookId: number | null
+  notebookName: string | null
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -101,4 +126,18 @@ export const notesApi = {
     request<Folder>(`/api/folders/${id}`, { method: 'PUT', body: JSON.stringify({ name }) }),
   deleteFolder: (id: number) =>
     request<void>(`/api/folders/${id}`, { method: 'DELETE' }),
+
+  // note <-> task/event links
+  listLinks: (noteId: number) => request<NoteLink[]>(`/api/notes/${noteId}/links`),
+  addLink: (noteId: number, targetType: LinkTargetType, targetId: number) =>
+    request<NoteLink>(`/api/notes/${noteId}/links`, {
+      method: 'POST',
+      body: JSON.stringify({ targetType, targetId }),
+    }),
+  removeLink: (noteId: number, linkId: number) =>
+    request<void>(`/api/notes/${noteId}/links/${linkId}`, { method: 'DELETE' }),
+
+  // reverse lookups for task/event detail views
+  notesForTask: (taskId: number) => request<LinkedNote[]>(`/api/tasks/${taskId}/notes`),
+  notesForEvent: (eventId: number) => request<LinkedNote[]>(`/api/events/${eventId}/notes`),
 }

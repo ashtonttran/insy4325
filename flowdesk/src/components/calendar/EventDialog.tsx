@@ -3,6 +3,7 @@ import { CalendarDays, Repeat, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useEventsStore } from '@/store/eventsStore'
 import { useCalendarsStore } from '@/store/calendarsStore'
+import { LinkedNotes } from '@/components/notes/LinkedNotes'
 import type { CalendarEvent, EventInput, EventRecurrence, EventTone } from '@/api/eventsApi'
 
 const TONES: { value: EventTone; label: string; swatch: string }[] = [
@@ -48,10 +49,14 @@ export interface EventDialogProps {
   /** Default date (ISO) when creating. */
   defaultDate: string
   onClose: () => void
+  /** Prefill the title when creating a new event (e.g. "Study: Note"). */
+  defaultTitle?: string
+  /** Called with the newly created event after a successful create. */
+  onCreated?: (event: CalendarEvent) => void
 }
 
 /** Modal for creating or editing a calendar event. */
-export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
+export function EventDialog({ event, defaultDate, onClose, defaultTitle, onCreated }: EventDialogProps) {
   const createEvent = useEventsStore((s) => s.createEvent)
   const updateEvent = useEventsStore((s) => s.updateEvent)
   const deleteEvent = useEventsStore((s) => s.deleteEvent)
@@ -88,11 +93,13 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
       setRecurrenceUntil(event.recurrenceUntil ?? '')
       setCalendarId(event.calendarId ?? null)
     } else {
+      setTitle(defaultTitle ?? '')
       setDate(defaultDate)
       setRecurrenceUntil('')
       setCalendarId(null)
     }
-  }, [event, defaultDate])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, defaultDate, defaultTitle])
 
   const save = async () => {
     if (!title.trim()) {
@@ -117,8 +124,12 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
       calendarId,
     }
     const result = event ? await updateEvent(event.id, input) : await createEvent(input)
-    if (result) onClose()
-    else setError('Could not save the event.')
+    if (result) {
+      if (!event && onCreated) onCreated(result)
+      onClose()
+    } else {
+      setError('Could not save the event.')
+    }
   }
 
   return (
@@ -282,6 +293,12 @@ export function EventDialog({ event, defaultDate, onClose }: EventDialogProps) {
             )}
           </div>
         </div>
+
+        {event && (
+          <div className="mt-4">
+            <LinkedNotes targetType="EVENT" targetId={event.id} />
+          </div>
+        )}
 
         <div className="mt-5 flex items-center justify-between border-t border-line pt-4">
           {event ? (

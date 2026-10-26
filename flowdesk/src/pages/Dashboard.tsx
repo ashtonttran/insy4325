@@ -1,17 +1,19 @@
 import { useEffect } from 'react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { AlertCircle, Check, Send } from 'lucide-react'
+import { AlertCircle, CalendarDays, Check, FileText, Send } from 'lucide-react'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Dot } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { EmptyState } from '@/components/ui/EmptyState'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/time'
-import { formatTime, todayInCentral } from '@/lib/calendar'
+import { addDays, formatTime, todayInCentral, toISO } from '@/lib/calendar'
 import { useNotesStore } from '@/store/notesStore'
 import { useTasksStore } from '@/store/tasksStore'
 import { useEventsStore } from '@/store/eventsStore'
+import { useUserStore } from '@/store/userStore'
 import type { TaskPriority } from '@/api/tasksApi'
 
 const agendaTone: Record<string, string> = {
@@ -25,6 +27,14 @@ const priorityDot: Record<TaskPriority, 'red' | 'orange' | 'green'> = {
   HIGH: 'red',
   MEDIUM: 'orange',
   LOW: 'green',
+}
+
+/** A time-of-day greeting, e.g. "Good morning". */
+function greeting(): string {
+  const h = new Date().getHours()
+  if (h < 12) return 'Good morning'
+  if (h < 18) return 'Good afternoon'
+  return 'Good evening'
 }
 
 /** Dashboard — the primary landing screen. */
@@ -42,6 +52,8 @@ export function Dashboard() {
 
   const events = useEventsStore((s) => s.events)
   const fetchEvents = useEventsStore((s) => s.fetchAll)
+
+  const firstName = useUserStore((s) => s.profile.firstName)
 
   useEffect(() => {
     void fetchNotes()
@@ -77,24 +89,48 @@ export function Dashboard() {
 
   // Stat counts.
   const openCount = tasks.filter((t) => t.status !== 'DONE').length
-  const doneCount = tasks.filter((t) => t.status === 'DONE').length
-  const upcomingEventCount = events.filter((e) => e.date >= todayISO).length
+  const eventsTodayCount = events.filter((e) => e.date === todayISO).length
+
+  // This week's completion: of tasks due in the current week (Sun–Sat), how
+  // many are done. Derived from real data; omitted when there are none.
+  const weekStart = toISO(addDays(new Date(), -new Date().getDay()))
+  const weekEnd = toISO(addDays(new Date(), 6 - new Date().getDay()))
+  const weekTasks = tasks.filter(
+    (t) => t.dueDate != null && t.dueDate >= weekStart && t.dueDate <= weekEnd,
+  )
+  const weekDone = weekTasks.filter((t) => t.status === 'DONE').length
+  const weekPct = weekTasks.length > 0 ? Math.round((weekDone / weekTasks.length) * 100) : null
 
   const stats = [
-    { label: 'OPEN TASKS', value: String(openCount), hint: `${doneCount} done` },
-    { label: 'NOTES', value: String(notes.length), hint: 'in your library' },
-    { label: 'UPCOMING EVENTS', value: String(upcomingEventCount), hint: 'today and ahead' },
+    { label: 'Tasks due soon', value: String(openCount), hint: openCount === 1 ? 'open task' : 'open tasks' },
+    { label: 'Events today', value: String(eventsTodayCount), hint: eventsTodayCount === 1 ? 'on your schedule' : 'on your schedule' },
+    // Only show weekly progress when there's something to measure.
+    ...(weekPct !== null
+      ? [{ label: 'This week', value: `${weekPct}%`, hint: `${weekDone}/${weekTasks.length} done` }]
+      : []),
   ]
 
   const isOverdue = (dueDate: string | null) => dueDate != null && dueDate < todayISO
+  const isDueToday = (dueDate: string | null) => dueDate === todayISO
 
   return (
-    <AppLayout title="Dashboard" subtitle="Welcome back! Here's your study plan for today.">
-      {/* Stat cards */}
+    <AppLayout title="Dashboard" subtitle="Here's your overview for today.">
+      {/* Welcome */}
+      <div className="mb-6">
+        <h2 className="text-2xl font-semibold text-ink">
+          {greeting()}
+          {firstName ? `, ${firstName}` : ''}!
+        </h2>
+        <p className="mt-0.5 text-sm text-ink-muted">Here's what's on your plate today.</p>
+      </div>
+
+      {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat) => (
           <Card key={stat.label} className="p-5">
-            <p className="text-xs font-medium tracking-wide text-ink-subtle">{stat.label}</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">
+              {stat.label}
+            </p>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-3xl font-bold text-ink">{stat.value}</span>
               <span className="text-sm text-ink-subtle">{stat.hint}</span>
@@ -138,6 +174,10 @@ export function Dashboard() {
                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600">
                       <AlertCircle className="h-3 w-3" /> Overdue
                     </span>
+                  ) : isDueToday(task.dueDate) ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      Due today
+                    </span>
                   ) : (
                     task.dueDate && (
                       <span className="shrink-0 text-xs text-ink-subtle">Due {task.dueDate}</span>
@@ -145,13 +185,16 @@ export function Dashboard() {
                   )}
                 </li>
               ))}
-              {openTasks.length === 0 && (
-                <li className="px-5 py-6 text-center text-sm text-ink-muted">
-                  No open tasks. Nice work.
-                </li>
-              )}
             </ul>
-            <div className="h-2" />
+            {openTasks.length === 0 && (
+              <EmptyState
+                icon={Check}
+                title="You're all caught up!"
+                description="No open tasks right now."
+                className="py-8"
+              />
+            )}
+            <div className="pb-2" />
           </Card>
 
           <Card>
@@ -179,13 +222,19 @@ export function Dashboard() {
                   </span>
                 </li>
               ))}
-              {recent.length === 0 && (
-                <li className="px-5 py-6 text-center text-sm text-ink-muted">
-                  {notesLoading ? 'Loading notes…' : 'No notes yet. Capture one below to get started.'}
-                </li>
-              )}
             </ul>
-            <div className="h-2" />
+            {recent.length === 0 &&
+              (notesLoading ? (
+                <p className="px-5 py-6 text-center text-sm text-ink-subtle">Loading notes…</p>
+              ) : (
+                <EmptyState
+                  icon={FileText}
+                  title="No notes yet"
+                  description="Capture a quick thought below to get started."
+                  className="py-8"
+                />
+              ))}
+            <div className="pb-2" />
           </Card>
         </div>
 
@@ -234,7 +283,12 @@ export function Dashboard() {
                 )
               })}
               {agendaEvents.length === 0 && (
-                <p className="py-4 text-center text-sm text-ink-muted">No upcoming events.</p>
+                <EmptyState
+                  icon={CalendarDays}
+                  title="Nothing scheduled"
+                  description="No upcoming events."
+                  className="py-6"
+                />
               )}
             </div>
           </Card>

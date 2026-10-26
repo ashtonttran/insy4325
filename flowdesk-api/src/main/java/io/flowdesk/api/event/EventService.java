@@ -5,6 +5,8 @@ import io.flowdesk.api.calendar.CalendarRepository;
 import io.flowdesk.api.common.NotFoundException;
 import io.flowdesk.api.event.dto.EventRequest;
 import io.flowdesk.api.event.dto.EventResponse;
+import io.flowdesk.api.note.NoteLink;
+import io.flowdesk.api.note.NoteLinkRepository;
 import io.flowdesk.api.notebook.Notebook;
 import io.flowdesk.api.notebook.NotebookRepository;
 import org.springframework.stereotype.Service;
@@ -25,12 +27,14 @@ public class EventService {
     private final EventRepository events;
     private final NotebookRepository notebooks;
     private final CalendarRepository calendars;
+    private final NoteLinkRepository noteLinks;
 
     public EventService(EventRepository events, NotebookRepository notebooks,
-                        CalendarRepository calendars) {
+                        CalendarRepository calendars, NoteLinkRepository noteLinks) {
         this.events = events;
         this.notebooks = notebooks;
         this.calendars = calendars;
+        this.noteLinks = noteLinks;
     }
 
     /** List events, optionally filtered to an inclusive [from, to] date range. */
@@ -93,6 +97,8 @@ public class EventService {
         if (!events.existsById(id)) {
             throw new NotFoundException("Event " + id + " not found");
         }
+        // Remove any note links pointing at this event so none dangle.
+        noteLinks.deleteByTargetTypeAndTargetId(NoteLink.TYPE_EVENT, id);
         events.deleteById(id);
     }
 

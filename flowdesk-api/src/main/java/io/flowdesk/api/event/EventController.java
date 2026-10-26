@@ -2,6 +2,9 @@ package io.flowdesk.api.event;
 
 import io.flowdesk.api.event.dto.EventRequest;
 import io.flowdesk.api.event.dto.EventResponse;
+import io.flowdesk.api.note.NoteLink;
+import io.flowdesk.api.note.NoteLinkService;
+import io.flowdesk.api.note.dto.LinkedNoteResponse;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -26,9 +29,11 @@ import java.util.List;
 public class EventController {
 
     private final EventService service;
+    private final NoteLinkService noteLinks;
 
-    public EventController(EventService service) {
+    public EventController(EventService service, NoteLinkService noteLinks) {
         this.service = service;
+        this.noteLinks = noteLinks;
     }
 
     /** List all events, or those within [from, to] when both are provided. */
@@ -59,5 +64,11 @@ public class EventController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /** Notes linked to this event (for the event detail view). */
+    @GetMapping("/{id}/notes")
+    public List<LinkedNoteResponse> linkedNotes(@PathVariable Long id) {
+        return noteLinks.notesForTarget(NoteLink.TYPE_EVENT, id);
     }
 }

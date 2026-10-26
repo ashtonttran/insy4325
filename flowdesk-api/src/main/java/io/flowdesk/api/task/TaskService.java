@@ -3,6 +3,8 @@ package io.flowdesk.api.task;
 import io.flowdesk.api.calendar.Calendar;
 import io.flowdesk.api.calendar.CalendarRepository;
 import io.flowdesk.api.common.NotFoundException;
+import io.flowdesk.api.note.NoteLink;
+import io.flowdesk.api.note.NoteLinkRepository;
 import io.flowdesk.api.notebook.Notebook;
 import io.flowdesk.api.notebook.NotebookRepository;
 import io.flowdesk.api.task.dto.StatusRequest;
@@ -29,11 +31,13 @@ public class TaskService {
     private final TaskRepository tasks;
     private final NotebookRepository notebooks;
     private final CalendarRepository calendars;
+    private final NoteLinkRepository noteLinks;
 
     public TaskService(TaskRepository tasks, NotebookRepository notebooks,
-                       CalendarRepository calendars) {
+                       CalendarRepository calendars, NoteLinkRepository noteLinks) {
         this.tasks = tasks;
         this.notebooks = notebooks;
+        this.noteLinks = noteLinks;
         this.calendars = calendars;
     }
 
@@ -135,6 +139,8 @@ public class TaskService {
         if (!tasks.existsById(id)) {
             throw new NotFoundException("Task " + id + " not found");
         }
+        // Remove any note links pointing at this task so none dangle.
+        noteLinks.deleteByTargetTypeAndTargetId(NoteLink.TYPE_TASK, id);
         tasks.deleteById(id);
     }
 

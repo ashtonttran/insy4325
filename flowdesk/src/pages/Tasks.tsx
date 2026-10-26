@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import {
   DndContext,
   PointerSensor,
@@ -22,6 +22,21 @@ const COLUMNS: { status: TaskStatus; label: string }[] = [
   { status: 'DONE', label: 'Done' },
 ]
 
+type BoardFilter = 'all' | 'active' | 'completed'
+
+const FILTERS: { value: BoardFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Completed' },
+]
+
+/** Which board columns a filter shows. Active hides Done; Completed shows only Done. */
+const VISIBLE_COLUMNS: Record<BoardFilter, TaskStatus[]> = {
+  all: ['TODO', 'IN_PROGRESS', 'DONE'],
+  active: ['TODO', 'IN_PROGRESS'],
+  completed: ['DONE'],
+}
+
 const priorityColor: Record<string, string> = {
   HIGH: 'bg-accent-red',
   MEDIUM: 'bg-accent-orange',
@@ -32,10 +47,13 @@ const priorityColor: Record<string, string> = {
 export function Tasks() {
   const { tasks, loading, error, fetchAll, changeStatus, selectTask, createTask } = useTasksStore()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const [filter, setFilter] = useState<BoardFilter>('all')
 
   useEffect(() => {
     void fetchAll()
   }, [fetchAll])
+
+  const visibleColumns = COLUMNS.filter((c) => VISIBLE_COLUMNS[filter].includes(c.status))
 
   const handleDragEnd = (event: DragEndEvent) => {
     const taskId = Number(event.active.id)
@@ -51,18 +69,38 @@ export function Tasks() {
   const completion = tasks.length ? Math.round((weeklyDone / tasks.length) * 100) : 0
 
   return (
-    <AppLayout title="Tasks Workspace" subtitle="Track tasks, sprints, and launch dependencies.">
+    <AppLayout title="Tasks" subtitle="Organize your assignments and track progress.">
       {error && (
         <div className="mb-4 rounded-btn border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      <div className="mb-4 flex items-center justify-between">
-        <div className="rounded-card border border-line bg-surface px-4 py-2 text-sm text-ink-muted shadow-card">
-          Weekly Completion Rate:{' '}
-          <span className="font-semibold text-ink">{completion}%</span>
-          <span className="text-ink-subtle"> ({weeklyDone}/{tasks.length})</span>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {/* All / Active / Completed segmented filter */}
+          <div className="flex rounded-btn border border-line bg-white p-0.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setFilter(f.value)}
+                aria-pressed={filter === f.value}
+                className={cn(
+                  'rounded px-3 py-1 text-sm font-medium transition-colors',
+                  filter === f.value
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-ink-muted hover:bg-canvas',
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="hidden rounded-card border border-line bg-surface px-4 py-2 text-sm text-ink-muted shadow-card sm:block">
+            Completed:{' '}
+            <span className="font-semibold text-ink">{completion}%</span>
+            <span className="text-ink-subtle"> ({weeklyDone}/{tasks.length})</span>
+          </div>
         </div>
         <Button
           size="sm"
@@ -82,8 +120,14 @@ export function Tasks() {
       </div>
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          {COLUMNS.map((col) => (
+        <div
+          className={cn(
+            'grid grid-cols-1 gap-4',
+            visibleColumns.length === 3 && 'md:grid-cols-3',
+            visibleColumns.length === 2 && 'md:grid-cols-2',
+          )}
+        >
+          {visibleColumns.map((col) => (
             <Column
               key={col.status}
               status={col.status}
@@ -133,7 +177,7 @@ export function Tasks() {
             <TaskCard key={task.id} task={task} onOpen={onOpen} />
           ))}
           {!loading && tasks.length === 0 && (
-            <p className="px-1 py-6 text-center text-xs text-ink-subtle">Nothing here</p>
+            <p className="px-1 py-6 text-center text-xs text-ink-subtle">No tasks</p>
           )}
         </div>
       </div>
@@ -145,6 +189,7 @@ export function Tasks() {
       id: task.id,
     })
     const doneSubs = task.subtasks.filter((s) => s.done).length
+    const done = task.status === 'DONE'
     const style = transform
       ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
       : undefined
@@ -157,8 +202,9 @@ export function Tasks() {
         {...attributes}
         onClick={() => onOpen(task.id)}
         className={cn(
-          'cursor-grab rounded-btn border border-line bg-white p-3 shadow-card active:cursor-grabbing',
+          'cursor-grab rounded-btn border border-line bg-white p-3 shadow-card transition-colors hover:border-brand-200 active:cursor-grabbing',
           isDragging && 'opacity-50',
+          done && 'bg-canvas',
         )}
       >
         <div className="mb-1.5 flex items-start gap-2">
@@ -166,7 +212,9 @@ export function Tasks() {
             className={cn('mt-1 h-2 w-2 shrink-0 rounded-full', priorityColor[task.priority])}
             title={`${task.priority} priority`}
           />
-          <p className="text-sm font-medium text-ink">{task.title}</p>
+          <p className={cn('text-sm font-medium text-ink', done && 'text-ink-subtle line-through')}>
+            {task.title}
+          </p>
         </div>
         <div className="flex items-center gap-3 pl-4 text-xs text-ink-subtle">
           {task.notebookName && <span>{task.notebookName}</span>}

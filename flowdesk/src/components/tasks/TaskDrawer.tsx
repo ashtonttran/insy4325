@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import { useTasksStore } from '@/store/tasksStore'
 import { useCalendarsStore } from '@/store/calendarsStore'
+import { LinkedNotes } from '@/components/notes/LinkedNotes'
 import type { SubtaskInput, TaskPriority, TaskRecurrence, TaskStatus } from '@/api/tasksApi'
 
 const STATUSES: { value: TaskStatus; label: string }[] = [
@@ -50,7 +51,15 @@ function recurrenceEndLabel(recurrence: TaskRecurrence, interval: number): strin
 
 /** Slide-over panel to view and edit a task and its subtasks. */
 export function TaskDrawer() {
-  const selectedTask = useTasksStore((s) => s.selectedTask)()
+  // Subscribe to the primitive selection state and the task list directly so
+  // this component re-renders the moment the selected task changes. (Selecting
+  // the `selectedTask` getter function returns a stable reference that never
+  // changes, so zustand would never notify us — causing the drawer to only
+  // appear on a later, unrelated render.)
+  const selectedTaskId = useTasksStore((s) => s.selectedTaskId)
+  const selectedTask = useTasksStore((s) =>
+    s.tasks.find((t) => t.id === s.selectedTaskId),
+  )
   const selectTask = useTasksStore((s) => s.selectTask)
   const updateTask = useTasksStore((s) => s.updateTask)
   const deleteTask = useTasksStore((s) => s.deleteTask)
@@ -88,7 +97,11 @@ export function TaskDrawer() {
     setRecurrenceUntil(selectedTask.recurrenceUntil ?? '')
     setCalendarId(selectedTask.calendarId ?? null)
     setSubtasks(selectedTask.subtasks.map((s) => ({ id: s.id, title: s.title, done: s.done })))
-  }, [selectedTask])
+    // Re-seed the form when the *selected item* changes (by id), not on every
+    // store update of the same task — so switching tasks reloads the form while
+    // in-progress edits aren't clobbered by background updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTaskId])
 
   if (!open || !selectedTask) return null
 
@@ -137,11 +150,11 @@ export function TaskDrawer() {
 
       {/* Panel */}
       <aside
-        className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-white shadow-popover"
+        className="fixed right-0 top-0 z-40 flex h-full w-full max-w-md flex-col border-l border-line bg-white shadow-popover"
         role="dialog"
         aria-label="Task details"
       >
-        <div className="flex items-center justify-between border-b border-line px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as TaskStatus)}
@@ -162,7 +175,7 @@ export function TaskDrawer() {
           </button>
         </div>
 
-        <div className="flex-1 space-y-5 px-5 py-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -296,6 +309,9 @@ export function TaskDrawer() {
             )}
           </div>
 
+          {/* Notes linked to this task */}
+          <LinkedNotes targetType="TASK" targetId={selectedTask.id} />
+
           {/* Subtasks */}
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -355,7 +371,7 @@ export function TaskDrawer() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-line px-5 py-4">
+        <div className="flex shrink-0 items-center justify-between border-t border-line px-5 py-4">
           <Button
             variant="ghost"
             size="sm"
@@ -363,6 +379,7 @@ export function TaskDrawer() {
             onClick={async () => {
               await deleteTask(selectedTask.id)
             }}
+            className="text-ink-muted hover:bg-red-50 hover:text-red-600"
           >
             Delete
           </Button>

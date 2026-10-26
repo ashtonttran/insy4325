@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Calendar, CheckSquare, FileText, Plus, Search } from 'lucide-react'
+import { Calendar, CheckSquare, FileText, Menu, Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/cn'
 import { searchApi, type SearchResult } from '@/api/searchApi'
@@ -15,14 +15,24 @@ export interface TopBarProps {
 
 /** Top bar with page title, global search, and Quick Add. */
 export function TopBar({ title, subtitle }: TopBarProps) {
+  const openMobileNav = useUiStore((s) => s.openMobileNav)
   return (
-    <header className="flex items-center justify-between border-b border-line bg-surface px-6 py-4">
-      <div>
-        <h1 className="text-lg font-bold text-ink">{title}</h1>
-        {subtitle && <p className="text-sm text-ink-muted">{subtitle}</p>}
+    <header className="flex items-center justify-between gap-3 border-b border-line bg-surface px-4 py-3.5 sm:px-6">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <button
+          onClick={openMobileNav}
+          aria-label="Open navigation"
+          className="-ml-1 rounded-btn p-1.5 text-ink-muted hover:bg-canvas hover:text-ink lg:hidden"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate text-xl font-semibold text-ink">{title}</h1>
+          {subtitle && <p className="truncate text-sm text-ink-muted">{subtitle}</p>}
+        </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <SearchBox />
         <QuickAdd />
       </div>

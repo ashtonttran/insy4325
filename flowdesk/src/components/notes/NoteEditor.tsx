@@ -21,6 +21,8 @@ import {
   Trash2,
   Underline as UnderlineIcon,
 } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { timeAgo } from '@/lib/time'
 import { RichEditor } from '@/components/notes/RichEditor'
@@ -38,6 +40,13 @@ export interface NoteEditorProps {
   onMoveToNotebook: (notebookId: number | null) => void
   /** On mobile, show a back control that returns to the list. */
   onBack?: () => void
+  /** Clicking the notebook in the breadcrumb opens the move dialog. */
+  onBreadcrumbClick?: () => void
+  /** Focus mode collapses the notes browser for a wider writing area. */
+  focusMode?: boolean
+  onToggleFocus?: () => void
+  /** Rendered below the note content (e.g. the Linked items section). */
+  belowContent?: ReactNode
 }
 
 const AUTOSAVE_MS = 700
@@ -51,6 +60,10 @@ export function NoteEditor({
   onDelete,
   onMoveToNotebook,
   onBack,
+  onBreadcrumbClick,
+  focusMode,
+  onToggleFocus,
+  belowContent,
 }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title)
   const [saveState, setSaveState] = useState<SaveState>('idle')
@@ -165,11 +178,31 @@ export function NoteEditor({
               ← Notes
             </button>
           )}
+          {onToggleFocus && (
+            <button
+              onClick={onToggleFocus}
+              title={focusMode ? 'Show notes list' : 'Focus mode (hide list)'}
+              aria-label={focusMode ? 'Show notes list' : 'Focus mode'}
+              className="mr-1 hidden rounded-btn border border-line p-1.5 text-ink-muted hover:bg-canvas lg:inline-flex"
+            >
+              {focusMode ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </button>
+          )}
           <span className="truncate">Notes</span>
           {breadcrumb.map((b) => (
             <span key={b} className="flex items-center gap-2">
               <span className="text-ink-subtle">/</span>
-              <span className="truncate text-ink-muted">{b}</span>
+              <button
+                onClick={onBreadcrumbClick}
+                className="truncate rounded px-1 py-0.5 text-ink-muted hover:bg-canvas hover:text-brand-700"
+                title="Change notebook"
+              >
+                {b}
+              </button>
             </span>
           ))}
         </div>
@@ -258,7 +291,7 @@ export function NoteEditor({
 
       {/* Writing canvas */}
       <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-[800px] px-6 py-8">
+        <div className="mx-auto w-full max-w-[760px] px-6 py-8">
           <input
             ref={titleInputRef}
             value={title}
@@ -274,6 +307,7 @@ export function NoteEditor({
               autofocus={!(note.title === 'Untitled Note' && (note.content ?? '') === '')}
             />
           </div>
+          {belowContent}
         </div>
       </div>
     </div>

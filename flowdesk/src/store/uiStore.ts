@@ -9,10 +9,19 @@ interface UiState {
   openNewEventOnCalendar: boolean
   requestNewEvent: () => void
   consumeNewEvent: () => void
+
+  /** Whether the mobile navigation drawer is open (small screens only). */
+  mobileNavOpen: boolean
+  openMobileNav: () => void
+  closeMobileNav: () => void
 }
 
 export const useUiStore = create<UiState>((set) => ({
   openNewEventOnCalendar: false,
   requestNewEvent: () => set({ openNewEventOnCalendar: true }),
   consumeNewEvent: () => set({ openNewEventOnCalendar: false }),
+
+  mobileNavOpen: false,
+  openMobileNav: () => set({ mobileNavOpen: true }),
+  closeMobileNav: () => set({ mobileNavOpen: false }),
 }))

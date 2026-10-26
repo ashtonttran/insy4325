@@ -1,18 +1,23 @@
 package io.flowdesk.api.note;
 
 import io.flowdesk.api.notebook.Notebook;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.ColumnDefault;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /** A single note belonging to a notebook. */
 @Entity
@@ -41,6 +46,10 @@ public class Note {
     @ManyToOne
     @JoinColumn(name = "notebook_id")
     private Notebook notebook;
+
+    /** Links from this note to tasks/events; removed automatically with the note. */
+    @OneToMany(mappedBy = "note", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<NoteLink> links = new ArrayList<>();
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -103,6 +112,10 @@ public class Note {
 
     public void setNotebook(Notebook notebook) {
         this.notebook = notebook;
+    }
+
+    public List<NoteLink> getLinks() {
+        return links;
     }
 
     public Instant getCreatedAt() {

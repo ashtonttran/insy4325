@@ -1,5 +1,7 @@
 package io.flowdesk.api.note;
 
+import io.flowdesk.api.note.dto.NoteLinkRequest;
+import io.flowdesk.api.note.dto.NoteLinkResponse;
 import io.flowdesk.api.note.dto.NoteRequest;
 import io.flowdesk.api.note.dto.NoteResponse;
 import jakarta.validation.Valid;
@@ -24,9 +26,11 @@ import java.util.List;
 public class NoteController {
 
     private final NoteService service;
+    private final NoteLinkService linkService;
 
-    public NoteController(NoteService service) {
+    public NoteController(NoteService service, NoteLinkService linkService) {
         this.service = service;
+        this.linkService = linkService;
     }
 
     @GetMapping
@@ -59,6 +63,28 @@ public class NoteController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    /* ----------------------------------------------------- linked items */
+
+    /** List the tasks/events linked to this note. */
+    @GetMapping("/{id}/links")
+    public List<NoteLinkResponse> listLinks(@PathVariable Long id) {
+        return linkService.list(id);
+    }
+
+    /** Link this note to a task or event. */
+    @PostMapping("/{id}/links")
+    @ResponseStatus(HttpStatus.CREATED)
+    public NoteLinkResponse addLink(@PathVariable Long id, @Valid @RequestBody NoteLinkRequest request) {
+        return linkService.create(id, request);
+    }
+
+    /** Remove a link from this note. */
+    @DeleteMapping("/{id}/links/{linkId}")
+    public ResponseEntity<Void> removeLink(@PathVariable Long id, @PathVariable Long linkId) {
+        linkService.delete(id, linkId);
         return ResponseEntity.noContent().build();
     }
 
