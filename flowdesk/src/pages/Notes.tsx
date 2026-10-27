@@ -13,11 +13,14 @@ import { NotesBrowser } from '@/components/notes/NotesBrowser'
 import { NoteEditor } from '@/components/notes/NoteEditor'
 import { NoteContextMenu } from '@/components/notes/NoteContextMenu'
 import { MoveToNotebookDialog } from '@/components/notes/MoveToNotebookDialog'
+import { CreateNoteDialog } from '@/components/notes/CreateNoteDialog'
+import { CreateNotebookDialog } from '@/components/notes/CreateNotebookDialog'
 import { LinkItemDialog } from '@/components/notes/LinkItemDialog'
 import { LinkedItems } from '@/components/notes/LinkedItems'
 import { TaskDrawer } from '@/components/tasks/TaskDrawer'
 import { EventDialog } from '@/components/calendar/EventDialog'
-import type { Note, NoteLink } from '@/api/notesApi'
+import type { BrowserView } from '@/components/notes/NotesBrowser'
+import type { Note, NoteLink, Notebook } from '@/api/notesApi'
 import { todayInCentral } from '@/lib/calendar'
 
 /** Notes workspace — a notes browser plus a focused editor with linked items. */
@@ -54,6 +57,8 @@ export function Notes() {
   const events = useEventsStore((s) => s.events)
   const fetchEvents = useEventsStore((s) => s.fetchAll)
 
+  const lastNotebookId = useNotesStore((s) => s.lastNotebookId)
+
   // Linked items for the open note.
   const links = useNoteLinksStore((s) => s.links)
   const linksLoading = useNoteLinksStore((s) => s.loading)
@@ -63,12 +68,18 @@ export function Notes() {
 
   const [mobileView, setMobileView] = useState<'list' | 'editor'>('list')
   const [focusMode, setFocusMode] = useState(false)
+  // The active destination notebook chosen in the Folders explorer.
+  const [selectedNotebookId, setSelectedNotebookId] = useState<number | null>(null)
 
   // Dialog + menu state
   const [menu, setMenu] = useState<{ note: Note; anchor: { x: number; y: number } } | null>(null)
   const [moveTarget, setMoveTarget] = useState<{ noteIds: number[]; current: number | null } | null>(null)
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [eventDraft, setEventDraft] = useState<{ title: string; noteId: number } | null>(null)
+  // Create-note dialog (Scenario B); carries the suggested default notebook.
+  const [createNoteOpen, setCreateNoteOpen] = useState<{ defaultNotebookId: number | null } | null>(null)
+  // Create-notebook dialog; carries an optional preselected parent folder.
+  const [createNotebookOpen, setCreateNotebookOpen] = useState<{ defaultFolderId: number | null } | null>(null)
 
   // Bulk selection
   const [selectionMode, setSelectionMode] = useState(false)
@@ -87,31 +98,86 @@ export function Notes() {
     void loadLinks(current?.id ?? null)
   }, [current?.id, loadLinks])
 
-  const handleNewNote = async () => {
-    const created = await createNote({ title: 'Untitled Note', content: '', tag: null, notebookId: null })
-    if (created) {
-      selectNote(created.id)
-      setMobileView('editor')
-    }
-  }
-
   const handleSelectNote = (id: number) => {
     selectNote(id)
     setMobileView('editor')
   }
 
-  // Keyboard shortcut: Cmd/Ctrl+Alt+N new note.
+  /* --------------------------------------------- context-aware creation */
+
+  // Create a note in a specific notebook and open it immediately for editing.
+  const createNoteIn = async (title: string, notebookId: number | null): Promise<Note | null> => {
+    const created = await createNote({
+      title: title.trim() || 'Untitled Note',
+      content: '',
+      tag: null,
+      notebookId,
+    })
+    if (created) {
+      selectNote(created.id)
+      setMobileView('editor')
+    }
+    return created
+  }
+
+  /**
+   * Context-aware "New Note" from the unified menu:
+   *  - Folders view with a notebook selected → one-click create in it.
+   *  - Otherwise → open the dialog with the last-used notebook suggested.
+   * (We deliberately never infer from the currently open note's notebook.)
+   */
+  const handleNewNote = (ctx: { view: BrowserView; notebookId: number | null }) => {
+    if (ctx.view === 'folders' && ctx.notebookId != null) {
+      void createNoteIn('', ctx.notebookId)
+    } else {
+      setCreateNoteOpen({ defaultNotebookId: lastNotebookId })
+    }
+  }
+
+  // Explicit "New note here" on a notebook — immediate create, no dialog.
+  const handleNewNoteInNotebook = (notebookId: number) => {
+    setSelectedNotebookId(notebookId)
+    void createNoteIn('', notebookId)
+  }
+
+  // "New note here" on a folder — create in the folder's first notebook.
+  const handleNewNoteInFolder = (folderId: number) => {
+    const target = notebooks.find((nb) => nb.folderId === folderId)
+    if (target) {
+      setSelectedNotebookId(target.id)
+      void createNoteIn('', target.id)
+    } else {
+      // Folder has no notebooks yet — fall back to the dialog to pick/create one.
+      setCreateNoteOpen({ defaultNotebookId: null })
+    }
+  }
+
+  // Keyboard shortcut: Cmd/Ctrl+Alt+N — mirrors the New-menu behavior.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.altKey && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault()
-        void handleNewNote()
+        if (selectedNotebookId != null) void createNoteIn('', selectedNotebookId)
+        else setCreateNoteOpen({ defaultNotebookId: lastNotebookId })
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedNotebookId, lastNotebookId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Create a notebook via the store, returning the new Notebook (for selection).
+  const createNotebookReturning = async (
+    name: string,
+    folderId: number | null,
+  ): Promise<Notebook | null> => {
+    await createNotebook(name, folderId)
+    // The store refreshes the list; find the newly created notebook by name.
+    const match = useNotesStore
+      .getState()
+      .notebooks.filter((nb) => nb.name === name && nb.folderId === (folderId ?? null))
+    return match[match.length - 1] ?? null
+  }
 
   /* ----------------------------------------------------- integrations */
 
@@ -163,10 +229,6 @@ export function Notes() {
     const name = window.prompt('New folder name')?.trim()
     if (name) void createFolder(name)
   }
-  const promptCreateNotebook = (folderId: number | null) => {
-    const name = window.prompt('New notebook name')?.trim()
-    if (name) void createNotebook(name, folderId)
-  }
   const promptRenameFolder = (id: number, current: string) => {
     const name = window.prompt('Rename folder', current)?.trim()
     if (name) void renameFolder(id, name)
@@ -212,8 +274,13 @@ export function Notes() {
             notebooks={notebooks}
             folders={folders}
             selectedNoteId={selectedNoteId}
+            selectedNotebookId={selectedNotebookId}
             onSelectNote={handleSelectNote}
+            onSelectNotebook={setSelectedNotebookId}
             onNewNote={handleNewNote}
+            onNewNotebook={() => setCreateNotebookOpen({ defaultFolderId: null })}
+            onNewNoteInNotebook={handleNewNoteInNotebook}
+            onNewNoteInFolder={handleNewNoteInFolder}
             onToggleFavorite={(id) => void toggleFavorite(id)}
             onOpenMenu={(note, anchor) => setMenu({ note, anchor })}
             selectionMode={selectionMode}
@@ -228,7 +295,7 @@ export function Notes() {
             }
             onClearSelection={clearSelection}
             onCreateFolder={promptCreateFolder}
-            onCreateNotebook={promptCreateNotebook}
+            onCreateNotebook={(folderId) => setCreateNotebookOpen({ defaultFolderId: folderId })}
             onRenameFolder={promptRenameFolder}
             onDeleteFolder={confirmDeleteFolder}
             onRenameNotebook={promptRenameNotebook}
@@ -283,7 +350,11 @@ export function Notes() {
                 title="Select a note to start writing"
                 description="Choose a note from the list, or create a new one."
                 action={
-                  <Button size="sm" leftIcon={<Plus className="h-4 w-4" />} onClick={handleNewNote}>
+                  <Button
+                    size="sm"
+                    leftIcon={<Plus className="h-4 w-4" />}
+                    onClick={() => setCreateNoteOpen({ defaultNotebookId: lastNotebookId })}
+                  >
                     New Note
                   </Button>
                 }
@@ -331,10 +402,44 @@ export function Notes() {
             setMoveTarget(null)
             clearSelection()
           }}
-          onCreateNotebook={async (name) => {
-            await createNotebook(name, null)
-            // Return the newly created notebook so the dialog can select it.
-            return useNotesStore.getState().notebooks.find((nb) => nb.name === name) ?? null
+          onCreateNotebook={async (name) => createNotebookReturning(name, null)}
+        />
+      )}
+
+      {/* Create note (title + searchable notebook destination) */}
+      {createNoteOpen && (
+        <CreateNoteDialog
+          notebooks={notebooks}
+          folders={folders}
+          defaultNotebookId={createNoteOpen.defaultNotebookId}
+          onCancel={() => setCreateNoteOpen(null)}
+          onCreate={async (title, notebookId) => {
+            const created = await createNoteIn(title, notebookId)
+            if (created) {
+              setSelectedNotebookId(notebookId)
+              setCreateNoteOpen(null)
+              return true
+            }
+            return false
+          }}
+          onCreateNotebook={createNotebookReturning}
+        />
+      )}
+
+      {/* Create notebook (styled dialog replacing window.prompt) */}
+      {createNotebookOpen && (
+        <CreateNotebookDialog
+          folders={folders}
+          defaultFolderId={createNotebookOpen.defaultFolderId}
+          onCancel={() => setCreateNotebookOpen(null)}
+          onCreate={async (name, folderId) => {
+            const nb = await createNotebookReturning(name, folderId)
+            if (nb) {
+              setSelectedNotebookId(nb.id)
+              setCreateNotebookOpen(null)
+              return true
+            }
+            return false
           }}
         />
       )}

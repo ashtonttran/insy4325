@@ -16,6 +16,8 @@ interface NotesState {
   notebooks: Notebook[]
   folders: Folder[]
   selectedNoteId: number | null
+  /** The last notebook a note was successfully created in (a suggested default). */
+  lastNotebookId: number | null
   loading: boolean
   error: string | null
 
@@ -52,6 +54,7 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   notebooks: [],
   folders: [],
   selectedNoteId: null,
+  lastNotebookId: null,
   loading: false,
   error: null,
 
@@ -85,7 +88,12 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     set({ error: null })
     try {
       const created = await notesApi.createNote(input)
-      set((state) => ({ notes: [created, ...state.notes], selectedNoteId: created.id }))
+      set((state) => ({
+        notes: [created, ...state.notes],
+        selectedNoteId: created.id,
+        // Remember the destination as the suggested default for next time.
+        lastNotebookId: created.notebookId ?? state.lastNotebookId,
+      }))
       // refresh notebook counts
       void get().fetchNotebooksSilently()
       return created

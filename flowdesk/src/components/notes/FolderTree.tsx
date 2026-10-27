@@ -34,9 +34,12 @@ export interface FolderTreeProps {
   notebooks: Notebook[]
   folders: Folder[]
   selectedNoteId: number | null
+  /** The notebook currently chosen as the active destination (highlighted). */
+  selectedNotebookId: number | null
   /** Optional query: filters notes (and surfaces matching folders/notebooks). */
   query?: string
   onSelectNote: (id: number) => void
+  onSelectNotebook: (id: number) => void
   onCreateFolder: () => void
   onCreateNotebook: (folderId: number | null) => void
   onRenameFolder: (id: number, current: string) => void
@@ -45,6 +48,10 @@ export interface FolderTreeProps {
   onDeleteNotebook: (id: number, name: string, noteCount: number) => void
   onMoveNoteToNotebook: (noteId: number, notebookId: number | null) => void
   onMoveNotebookToFolder: (notebookId: number, folderId: number | null) => void
+  /** Explicit "New note here" — create immediately in this notebook. */
+  onNewNoteInNotebook: (notebookId: number) => void
+  /** "New note here" on a folder — create immediately in the folder's first notebook. */
+  onNewNoteInFolder: (folderId: number) => void
 }
 
 export function FolderTree({
@@ -52,8 +59,10 @@ export function FolderTree({
   notebooks,
   folders,
   selectedNoteId,
+  selectedNotebookId,
   query = '',
   onSelectNote,
+  onSelectNotebook,
   onCreateFolder,
   onCreateNotebook,
   onRenameFolder,
@@ -62,6 +71,8 @@ export function FolderTree({
   onDeleteNotebook,
   onMoveNoteToNotebook,
   onMoveNotebookToFolder,
+  onNewNoteInNotebook,
+  onNewNoteInFolder,
 }: FolderTreeProps) {
   // Expanded state keyed by stable ids; survives note selection changes.
   const [collapsedFolders, setCollapsedFolders] = useState<Record<number, boolean>>({})
@@ -168,6 +179,7 @@ export function FolderTree({
 
   const NotebookRow = ({ nb, depth }: { nb: Notebook; depth: number }) => {
     const open = notebookOpen(nb.id)
+    const active = selectedNotebookId === nb.id
     const nbNotes = notesForNotebook(nb.id)
     const drop = useDroppable({ id: `nb:${nb.id}` })
     const drag = useDraggable({ id: `nb:${nb.id}` })
@@ -179,6 +191,7 @@ export function FolderTree({
           className={cn(
             'group flex items-center rounded-btn',
             drop.isOver && 'ring-2 ring-brand-400',
+            active && 'bg-brand-50',
             drag.isDragging && 'opacity-50 hover:bg-canvas',
           )}
         >
@@ -193,9 +206,12 @@ export function FolderTree({
             ref={drag.setNodeRef}
             {...drag.listeners}
             {...drag.attributes}
-            onClick={() => toggleNotebook(nb.id)}
+            onClick={() => onSelectNotebook(nb.id)}
             title={nb.name}
-            className="flex min-w-0 flex-1 cursor-grab items-center gap-1.5 py-1.5 pr-1 text-sm text-ink active:cursor-grabbing"
+            className={cn(
+              'flex min-w-0 flex-1 cursor-grab items-center gap-1.5 py-1.5 pr-1 text-sm active:cursor-grabbing',
+              active ? 'font-medium text-brand-700' : 'text-ink',
+            )}
           >
             <NotebookText className="h-4 w-4 shrink-0 text-ink-subtle" />
             <span className="truncate">{nb.name}</span>
@@ -214,7 +230,8 @@ export function FolderTree({
             {nbMenu === nb.id && (
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setNbMenu(null)} aria-hidden />
-                <div className="absolute right-0 z-20 mt-1 w-40 rounded-btn border border-line bg-white py-1 shadow-popover">
+                <div className="absolute right-0 z-20 mt-1 w-44 rounded-btn border border-line bg-white py-1 shadow-popover">
+                  <MenuBtn label="New note here" onClick={() => { onNewNoteInNotebook(nb.id); setNbMenu(null) }} />
                   <MenuBtn label="Rename notebook" onClick={() => { onRenameNotebook(nb.id, nb.name); setNbMenu(null) }} />
                   <MenuBtn label="Delete notebook" destructive onClick={() => { onDeleteNotebook(nb.id, nb.name, nb.noteCount); setNbMenu(null) }} />
                 </div>
@@ -272,7 +289,12 @@ export function FolderTree({
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setFolderMenu(null)} aria-hidden />
                 <div className="absolute right-0 z-20 mt-1 w-44 rounded-btn border border-line bg-white py-1 shadow-popover">
-                  <MenuBtn label="New notebook" onClick={() => { onCreateNotebook(folder.id); setFolderMenu(null) }} />
+                  <MenuBtn
+                    label="New note here"
+                    disabled={children.length === 0}
+                    onClick={() => { onNewNoteInFolder(folder.id); setFolderMenu(null) }}
+                  />
+                  <MenuBtn label="New subfolder" onClick={() => { onCreateNotebook(folder.id); setFolderMenu(null) }} />
                   <MenuBtn label="Rename folder" onClick={() => { onRenameFolder(folder.id, folder.name); setFolderMenu(null) }} />
                   <MenuBtn label="Delete folder" destructive onClick={() => { onDeleteFolder(folder.id, folder.name); setFolderMenu(null) }} />
                 </div>
@@ -345,17 +367,24 @@ function MenuBtn({
   label,
   onClick,
   destructive,
+  disabled,
 }: {
   label: string
   onClick: () => void
   destructive?: boolean
+  disabled?: boolean
 }) {
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        'block w-full px-3 py-1.5 text-left text-sm hover:bg-canvas',
-        destructive ? 'text-red-600' : 'text-ink',
+        'block w-full px-3 py-1.5 text-left text-sm',
+        disabled
+          ? 'cursor-not-allowed text-ink-subtle'
+          : destructive
+            ? 'text-red-600 hover:bg-canvas'
+            : 'text-ink hover:bg-canvas',
       )}
     >
       {label}

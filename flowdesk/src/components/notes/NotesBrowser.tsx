@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   MoreHorizontal,
+  NotebookText,
   Plus,
   Search,
   Star,
@@ -42,8 +43,17 @@ export interface NotesBrowserProps {
   notebooks: Notebook[]
   folders: Folder[]
   selectedNoteId: number | null
+  /** Active destination notebook in Folders view (for context-aware creation). */
+  selectedNotebookId: number | null
   onSelectNote: (id: number) => void
-  onNewNote: () => void
+  onSelectNotebook: (id: number) => void
+  /** Context-aware "New Note": the page decides one-click vs dialog. */
+  onNewNote: (ctx: { view: BrowserView; notebookId: number | null }) => void
+  /** Open the "create notebook" dialog. */
+  onNewNotebook: () => void
+  /** Explicit, immediate creation inside a specific notebook/folder. */
+  onNewNoteInNotebook: (notebookId: number) => void
+  onNewNoteInFolder: (folderId: number) => void
   onToggleFavorite: (id: number) => void
   onOpenMenu: (note: Note, anchor: { x: number; y: number }) => void
   /** Bulk-selection state lifted to the page so the page can run the bulk move. */
@@ -74,8 +84,13 @@ export function NotesBrowser({
   notebooks,
   folders,
   selectedNoteId,
+  selectedNotebookId,
   onSelectNote,
+  onSelectNotebook,
   onNewNote,
+  onNewNotebook,
+  onNewNoteInNotebook,
+  onNewNoteInFolder,
   onToggleFavorite,
   onOpenMenu,
   selectionMode,
@@ -97,6 +112,7 @@ export function NotesBrowser({
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SortKey>('edited')
   const [view, setView] = useState<ViewMode>('list')
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
 
   const isFolders = topView === 'folders'
 
@@ -129,16 +145,62 @@ export function NotesBrowser({
 
   return (
     <div className="flex h-full flex-col border-r border-line bg-surface">
-      {/* Row 1 — heading + New note */}
+      {/* Row 1 — heading + unified New menu */}
       <div className="flex items-center justify-between gap-2 px-3 pt-3">
         <h2 className="text-sm font-bold text-ink">My Notes</h2>
-        <button
-          onClick={onNewNote}
-          title="New note (Ctrl/Cmd+Alt+N)"
-          className="inline-flex shrink-0 items-center gap-1 rounded-btn bg-brand-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-600"
-        >
-          <Plus className="h-3.5 w-3.5" /> New Note
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setNewMenuOpen((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
+            className="inline-flex shrink-0 items-center gap-1 rounded-btn bg-brand-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400"
+          >
+            <Plus className="h-3.5 w-3.5" /> New
+            <ChevronDown className="h-3 w-3" />
+          </button>
+          {newMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setNewMenuOpen(false)} aria-hidden />
+              <div
+                role="menu"
+                className="absolute right-0 z-40 mt-1 w-56 overflow-hidden rounded-card border border-line bg-white py-1 shadow-popover"
+              >
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setNewMenuOpen(false)
+                    onNewNote({ view: topView, notebookId: isFolders ? selectedNotebookId : null })
+                  }}
+                  className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-canvas"
+                >
+                  <FileText className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-ink">New note</span>
+                    <span className="block text-xs text-ink-subtle">
+                      Create a new note in a selected notebook
+                    </span>
+                  </span>
+                </button>
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    setNewMenuOpen(false)
+                    onNewNotebook()
+                  }}
+                  className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-canvas"
+                >
+                  <NotebookText className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-ink">New notebook</span>
+                    <span className="block text-xs text-ink-subtle">
+                      Create a new folder to organize notes
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Row 2 — four equal-width navigation options (icon over label) */}
@@ -255,8 +317,10 @@ export function NotesBrowser({
             notebooks={notebooks}
             folders={folders}
             selectedNoteId={selectedNoteId}
+            selectedNotebookId={selectedNotebookId}
             query={query}
             onSelectNote={onSelectNote}
+            onSelectNotebook={onSelectNotebook}
             onCreateFolder={onCreateFolder}
             onCreateNotebook={onCreateNotebook}
             onRenameFolder={onRenameFolder}
@@ -265,6 +329,8 @@ export function NotesBrowser({
             onDeleteNotebook={onDeleteNotebook}
             onMoveNoteToNotebook={onMoveNoteToNotebook}
             onMoveNotebookToFolder={onMoveNotebookToFolder}
+            onNewNoteInNotebook={onNewNoteInNotebook}
+            onNewNoteInFolder={onNewNoteInFolder}
           />
         </div>
       ) : (
